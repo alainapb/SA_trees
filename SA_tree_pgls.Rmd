@@ -1,0 +1,25 @@
+---
+title: "SA_tree_pgls"
+author: "APB"
+date: "4/8/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(caper)
+```
+
+```{r load_data, include = FALSE}
+tree<-read.nexus("data/36runs_BI250000_12K_output.tre")
+#plot(tree, cex = 0.03) #1852 tips
+data<-read.csv("data/SA_tree_data.csv", header = TRUE)
+```
+
+```{r clean_data, include =FALSE}
+#first pull Family name out of the tree tip labels 
+which(tree$tip.label %in% data$orginal_matrix_name)
+```
+
