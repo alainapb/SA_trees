@@ -10,16 +10,179 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggplot2)
 library(caper)
+library(picante)
+library(raster)
+library(scico)
 ```
 
 ```{r load_data, include = FALSE}
 tree<-read.nexus("data/36runs_BI250000_12K_output.tre")
 #plot(tree, cex = 0.03) #1852 tips
 data<-read.csv("data/SA_tree_data.csv", header = TRUE)
+
+summary(data)
 ```
 
 ```{r clean_data, include =FALSE}
-#first pull Family name out of the tree tip labels 
-which(tree$tip.label %in% data$orginal_matrix_name)
+#first pull Family name out of the tree tip labels
+tree$tip.label<-gsub("^.*?_","", tree$tip.label)
+
+#check similarity between tree tips and data
+tree_data<-data[which(data$matrix_name %in% tree$tip.label),]
+tree_data$height<-as.numeric(tree_data$height)
+tree_data$length<-as.numeric(tree_data$length)
+tree_data$width<-as.numeric(tree_data$width)
+summary(tree_data)
+
+#remove any blanks from map_name
+filter(tree_data, map_name != "")->tree_data
+
+length(unique(tree_data$map_name)) #there is data for 1085 map_names from the tree 
+
+#subset the tree to only include taxa there is data for 
+SA_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% tree_data$matrix_name))])
+#plot(SA_tree, cex = 0.3, type = "f")
+
 ```
 
+```{r calculate PD, include = FALSE}
+#interspecific distance matrix
+distance_matrix<-cophenetic.phylo(SA_tree)
+
+#make an association matrix to add data to
+df<-data.frame(matrix(ncol=length(SA_tree$tip.label), nrow=length(SA_tree$tip.label)), row.names = SA_tree$tip.label)
+colnames(df)<-SA_tree$tip.label
+
+#mpd<-mpd(df, distance_matrix)
+```
+
+
+```{r pgls, echo = TRUE}
+
+#make dataframe
+dat<-data.frame(taxa=SA_tree$tip.label,
+                height=tree_data$height, 
+                leaf_shape=tree_data$ratio)
+
+cdat<-comparative.data(data = dat, phy = SA_tree, names.col="taxa")
+
+summary(pgls(log(height*1000) ~ leaf_shape, cdat, lambda = "ML")) #leaf shape predicts height ***; lambda = 0.267
+
+summary(pgls(log(height*1000) ~ 1, cdat, lambda = "ML")) #lambda = 0.322
+
+
+summary(pgls(leaf_shape ~ 1, cdat, lambda = "ML")) #lambda = 0.75
+
+#subset the data to remove 'Exotic' species and NAs
+tree_data %>%
+  filter(height != "Exotic") %>%
+  filter(height != "NA") %>% 
+  filter(ratio != "NA")-> l
+
+summary(l)
+
+summary(gls(log(height * 1000) ~ ratio, data = l)) # significant negative correlation (-0.68) 
+cor.test(log(l$height * 1000), l$ratio) # significant negative correlation
+#with increasing tree height there are more round leaves
+
+ggplot(l, mapping = aes(x=height*1000, y = ratio))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  #xlim(limits =c(0, 20000))+
+  theme_classic()
+
+```
+
+```{r load_shape_files, include = FALSE}
+library(sf)
+
+#See some info on plotting shape files here:
+#https://r-spatial.github.io/sf/articles/sf5.html
+SA_poly<-st_read("data/GIS_DATA/all_no_exotics.shp")
+plot(st_geometry(SA_poly)) #Contains 1176 polygons
+
+SA_grids<-st_read("data/GIS_DATA/SA_grid.shp")
+plot(st_geometry(SA_grids))
+
+z<-subset(SA_poly, SA_poly$shpname=="acacia_karroo.shp")
+plot(st_geometry(SA_grids))
+plot(st_geometry(z), col = "lightblue", add = T) #add = T is adding the polygon for z to the previous plot
+```
+#TO DO
+## 1) overlay the grid and generate a simple species richness map
+## 2) extract the list of species overlapping each grid cell and then calculate PD for each cell. 
+## 3) map the median species trait values for each cell
+
+###Notes: One way of doing all this is by ‘rasterising’ each species polygon, and then stacking them. Assign a ‘trait value’ to each raster (for species richness this would just be ‘1’), and then sum the values or take their mean etc. Some hints here: https://luisdva.github.io/rstats/richness/
+```{r, species_richness_map, echo = TRUE}
+
+st_crs(SA_grids)<-4326
+st_crs(SA_poly)
+st_crs(SA_grids)
+
+sf_use_s2(FALSE) # fixes the error with spherical geometry 
+
+richness_grid <- SA_grids %>%
+  st_join(SA_poly) %>%
+  mutate(overlap = ifelse(!is.na(shpname), 1, 0)) %>% #1 if there is a shpname
+  group_by(lat, long) %>%
+  summarize(num_species = sum(overlap)) %>%
+  mutate(ID = paste(lat, "_", long))
+
+
+ggplot(richness_grid) +
+  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = num_species), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Species richness") +
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+  ) + labs(fill = "richness")
+
+```
+```{r another_way_to_count_species, include = FALSE}
+usp <- unique(SA_poly$shpname)
+r <- raster(res=0.5)
+s <- list()
+for (i in 1:length(usp)) {
+    p <- SA_poly[SA_poly$shpname == usp[i], ]
+    s[[i]] <- rasterize(p, r, field=1, fun="count")
+}       
+ss <- stack(s) 
+sr <- sum(ss>0, na.rm=TRUE)
+
+m <- as.matrix(ss)
+m[is.na(m)] <- 0
+
+i <- which(rowSums(m) > 0) # to remove rows with no species 
+xy <- xyFromCell(r, i)  
+output <- cbind(xy, m[i,])
+colnames(output) <- c("lon", "lat", usp)
+
+
+xx<-data.frame(long = output[,1], lat = output[,2])
+xx$no_species<-rowSums(output[,3:1178]) #number of species at each lat long
+```
+
+```{r list_of_species_in_each_grid_cell, include = FALSE}
+SA_grids %>%
+  st_join(SA_poly) %>%
+  group_by(lat, long) %>%
+  mutate(ID = paste(lat, "_", long))-> grid_names
+  
+length(unique(grid_names$ID)) #same as richness_grid
+
+###
+```
+
+
+```{r}
+setdiff(tree_data$map_name, SA_poly$shpname) #some names from the data are not in the GIS data ("eugenia_uniflora.shp")
+setdiff(SA_poly$shpname, tree_data$map_name) #92 species in the GIS data that are not in the tree
+#Do we include these in calculations of richness?
+```
