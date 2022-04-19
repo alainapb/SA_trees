@@ -108,6 +108,7 @@ plot(st_geometry(SA_grids))
 z<-subset(SA_poly, SA_poly$shpname=="acacia_karroo.shp")
 plot(st_geometry(SA_grids))
 plot(st_geometry(z), col = "lightblue", add = T) #add = T is adding the polygon for z to the previous plot
+
 ```
 #TO DO
 ## 1) overlay the grid and generate a simple species richness map
@@ -256,40 +257,40 @@ for (i in 1:nrow(trait_data)) {
    summarise(length(height)) -> trait_data$count[i]
   
   j%>%
-   summarise(median(height), na.rm = TRUE) %>% as.numeric -> trait_data$treeheight[i]
+   summarise(mean(height), na.rm = TRUE) %>% as.numeric -> trait_data$treeheight[i]
   
   j%>%
-   summarise(median(length), na.rm = TRUE) %>% as.numeric -> trait_data$leaflength[i]
+   summarise(mean(length), na.rm = TRUE) %>% as.numeric -> trait_data$leaflength[i]
   
   j%>%
-   summarise(median(width), na.rm = TRUE) %>% as.numeric -> trait_data$leafwidth[i]
+   summarise(mean(width), na.rm = TRUE) %>% as.numeric -> trait_data$leafwidth[i]
   
    j%>%
-   summarise(median(ratio), na.rm = TRUE) %>% as.numeric -> trait_data$leafshape[i]
+   summarise(mean(ratio), na.rm = TRUE) %>% as.numeric -> trait_data$leafshape[i]
    
     j%>%
-   summarise(median(leaf_area), na.rm = TRUE) %>% as.numeric -> trait_data$leafarea[i]
+   summarise(mean(leaf_area_estimated), na.rm = TRUE) %>% as.numeric -> trait_data$leafarea[i]
 }
 
 
-library(pez)
-community<-as.matrix(comm_matrix)
-traits<-with(tree_names, 
-             data.frame(treeheight = log(height *1000),
-                        leaflength = length, 
-                        leafwidth = width, 
-                        leafshape = ratio, 
-                        leafarea = leaf_area,
-                        row.names = matrix_name))
-compar_data <- comparative.comm(tree, 
-                    community, 
-                    traits)
-str(compar_data)
+#library(pez)
+#community<-as.matrix(comm_matrix)
+#traits<-with(tree_names, 
+#             data.frame(treeheight = log(height *1000),
+#                        leaflength = length, 
+#                        leafwidth = width, 
+#                        leafshape = ratio, 
+#                        leafarea = leaf_area,
+#                        row.names = matrix_name))
+#compar_data <- comparative.comm(tree, 
+#                    community, 
+#                    traits)
+#str(compar_data)
 
 ```
 #Plot median tree traits per grid cell
 ```{r tree_trait_plots, echo =TRUE}
-right_join(richness_grid, trait_data, by = "ID")->trait_grid
+right_join(mpd_grid, trait_data, by = "ID")->trait_grid
 
 trait_grid$count<-unlist(trait_grid$count)
 trait_grid$treeheight<-unlist(trait_grid$treeheight)
@@ -342,9 +343,22 @@ ggplot(trait_grid) +
     ) + labs(fill = "Leaf Area")
 ```
 
+#Rerun JD's Stats
+```{r correlations_regressions, include = TRUE}
+#Is there a correlation between mpd and species richness? 0.33 ***
+cor.test(mpd_grid$mpd.obs, mpd_grid$ntaxa)
 
-```{r}
-setdiff(tree_data$map_name, SA_poly$shpname) #some names from the data are not in the GIS data ("eugenia_uniflora.shp")
-setdiff(SA_poly$shpname, tree_data$map_name) #92 species in the GIS data that are not in the tree
-#Do we include these in calculations of richness?
+#Does mpd capture functional diversity? ...yes 57%
+summary(lm(treeheight ~ mpd.obs * ntaxa, data =trait_grid))
+
+#Is there a correlation between height and leaf shape? YES, tall trees have rounder leaves
+cor.test(trait_grid$treeheight, trait_grid$leafshape) # -0.65 ***
+
+#Is tree height explained by mpd and leaf shape?
+summary(lm(log(treeheight) ~ mpd.obs + leafshape, data = trait_grid))
 ```
+
+```{r pgls, include = TRUE}
+pgls()
+```
+
