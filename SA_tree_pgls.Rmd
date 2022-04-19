@@ -13,6 +13,7 @@ library(caper)
 library(picante)
 library(raster)
 library(scico)
+library(pez)
 ```
 
 ```{r load_data, include = FALSE}
@@ -114,6 +115,8 @@ plot(st_geometry(z), col = "lightblue", add = T) #add = T is adding the polygon 
 ## 3) map the median species trait values for each cell
 
 ###Notes: One way of doing all this is by ‘rasterising’ each species polygon, and then stacking them. Assign a ‘trait value’ to each raster (for species richness this would just be ‘1’), and then sum the values or take their mean etc. Some hints here: https://luisdva.github.io/rstats/richness/
+
+#Species Richness Map
 ```{r, species_richness_map, echo = TRUE}
 
 st_crs(SA_grids)<-4326
@@ -126,7 +129,8 @@ richness_grid <- SA_grids %>%
   st_join(SA_poly) %>%
   mutate(overlap = ifelse(!is.na(shpname), 1, 0)) %>% #1 if there is a shpname
   group_by(lat, long) %>%
-  summarize(num_species = sum(overlap)) %>%
+  summarize(num_species = sum(overlap), 
+            sp_names = list(shpname)) %>%
   mutate(ID = paste(lat, "_", long))
 
 
@@ -145,6 +149,7 @@ ggplot(richness_grid) +
   ) + labs(fill = "richness")
 
 ```
+##Another way to calculate species richness
 ```{r another_way_to_count_species, include = FALSE}
 usp <- unique(SA_poly$shpname)
 r <- raster(res=0.5)
@@ -168,16 +173,173 @@ colnames(output) <- c("lon", "lat", usp)
 xx<-data.frame(long = output[,1], lat = output[,2])
 xx$no_species<-rowSums(output[,3:1178]) #number of species at each lat long
 ```
-
+#Calculate PD for each grid cell (ID)
 ```{r list_of_species_in_each_grid_cell, include = FALSE}
-SA_grids %>%
-  st_join(SA_poly) %>%
-  group_by(lat, long) %>%
-  mutate(ID = paste(lat, "_", long))-> grid_names
-  
-length(unique(grid_names$ID)) #same as richness_grid
+#### ses.mpd from 'picante'
+#need a community matrix where ID are the rows and species names are the columns
+comm_matrix<-data.frame(matrix(ncol= length(tree$tip.label)), nrow=unique(richness_grid$ID), row.names = unique(richness_grid$ID))
+rownames(comm_matrix)<-unique(richness_grid$ID)
+tree_names<-tree_data[match(tree$tip.label, tree_data$matrix_name, nomatch = NA),] #put tree_data in tree tip.label order so we can easily switch between map_name and matrix_name
+tree_names<-subset(tree_names, map_name != "NA")
+colnames(comm_matrix)<-tree_names$map_name #set column names to the map names to make the for loop simpler
 
-###
+for (i in 1:nrow(comm_matrix)){
+ comm_matrix[i,] <- colnames(comm_matrix) %in% unlist(subset(richness_grid, ID == rownames(comm_matrix)[i])$sp_names) %>% as.numeric
+
+}
+
+str(comm_matrix)
+k<-as.numeric(comm_matrix['-34.75 _ 19.75',]) # should have a sum of 101
+sum(k) # it does!
+
+#make column names match the tree tip labels 
+colnames(comm_matrix)<-tree_names$matrix_name
+
+##code takes time to run
+#ses_results <-ses.mpd(comm_matrix, distance_matrix, null.model = "taxa.labels", runs = 100) #30 minutes
+##save output as RDS
+#saveRDS(ses_results, "NRI_data.rds")
+##read in ses.mpd results
+NRI<-readRDS("NRI_data.rds") 
+NRI$ID<-rownames(NRI)
+```
+#Map the mpd values for each cell
+```{r mpd_plot, echo = TRUE}
+right_join(richness_grid, NRI, by = "ID")->mpd_grid
+
+ggplot(mpd_grid) +
+  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = mpd.obs), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "MPD") +
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+    ) + labs(fill = "MPD")
+
+ggplot(mpd_grid) +
+  geom_sf(data = SA_poly, fill = "white", color = "grey", size = 0.05) +
+  geom_sf(data = SA_grids, fill = "white", color = "black", size = 0.4) +
+  geom_sf(aes(fill = mpd.obs.p), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "quantiles (p)") +
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+    ) + labs(fill = "quantiles (p)")
+# high quantiles (mpd.obs.p > 0.95) indicate phylogenetic evenness, or a greater phylogenetic distance among co-occurring species than expected.
+```
+#Summarise tree traits for each grid cell 
+```{r pull_medians_for_trait_data, include = FALSE}
+#dataframe by ID that includes the median tree trait data for each ID 
+trait_data<-data.frame(ID = unique(richness_grid$ID), 
+                       count =NA, 
+                       treeheight = NA,
+                       leaflength = NA, 
+                       leafwidth = NA, 
+                       leafshape = NA, 
+                       leafarea = NA)
+
+for (i in 1:nrow(trait_data)) {
+  
+  subset(tree_names, comm_matrix[i, ] == 1) ->j
+  
+  j%>%
+   summarise(length(height)) -> trait_data$count[i]
+  
+  j%>%
+   summarise(median(height), na.rm = TRUE) %>% as.numeric -> trait_data$treeheight[i]
+  
+  j%>%
+   summarise(median(length), na.rm = TRUE) %>% as.numeric -> trait_data$leaflength[i]
+  
+  j%>%
+   summarise(median(width), na.rm = TRUE) %>% as.numeric -> trait_data$leafwidth[i]
+  
+   j%>%
+   summarise(median(ratio), na.rm = TRUE) %>% as.numeric -> trait_data$leafshape[i]
+   
+    j%>%
+   summarise(median(leaf_area), na.rm = TRUE) %>% as.numeric -> trait_data$leafarea[i]
+}
+
+
+library(pez)
+community<-as.matrix(comm_matrix)
+traits<-with(tree_names, 
+             data.frame(treeheight = log(height *1000),
+                        leaflength = length, 
+                        leafwidth = width, 
+                        leafshape = ratio, 
+                        leafarea = leaf_area,
+                        row.names = matrix_name))
+compar_data <- comparative.comm(tree, 
+                    community, 
+                    traits)
+str(compar_data)
+
+```
+#Plot median tree traits per grid cell
+```{r tree_trait_plots, echo =TRUE}
+right_join(richness_grid, trait_data, by = "ID")->trait_grid
+
+trait_grid$count<-unlist(trait_grid$count)
+trait_grid$treeheight<-unlist(trait_grid$treeheight)
+trait_grid$leaflength<-unlist(trait_grid$leaflength)
+trait_grid$leafwidth<-unlist(trait_grid$leafwidth)
+trait_grid$leafshape<-unlist(trait_grid$leafshape)
+trait_grid$leafarea<-unlist(trait_grid$leafarea)
+
+
+ggplot(trait_grid) +
+  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = log(treeheight *1000)), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Log (Tree Height in m)") +
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+    ) + labs(fill = "Log (Tree Height in m)")
+
+ggplot(trait_grid) +
+  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = leafshape), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Leaf Shape") +
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+    ) + labs(fill = "Leaf Shape")
+
+ggplot(trait_grid) +
+  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = leafarea), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Leaf Area") +
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+    ) + labs(fill = "Leaf Area")
 ```
 
 
