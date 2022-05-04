@@ -71,8 +71,9 @@ summary(pgls(log(height*1000) ~ leaf_shape, cdat, lambda = "ML")) #leaf shape pr
 
 summary(pgls(log(height*1000) ~ 1, cdat, lambda = "ML")) #lambda = 0.322
 
-
 summary(pgls(leaf_shape ~ 1, cdat, lambda = "ML")) #lambda = 0.75
+
+summary(lm(log(height*1000) ~ ratio, tree_data)) 
 
 #subset the data to remove 'Exotic' species and NAs
 tree_data %>%
@@ -119,6 +120,7 @@ plot(st_geometry(z), col = "lightblue", add = T) #add = T is adding the polygon 
 
 #Species Richness Map
 ```{r, species_richness_map, echo = TRUE}
+#QDS is quarter degree square grids
 
 st_crs(SA_grids)<-4326
 st_crs(SA_poly)
@@ -257,19 +259,19 @@ for (i in 1:nrow(trait_data)) {
    summarise(length(height)) -> trait_data$count[i]
   
   j%>%
-   summarise(mean(height), na.rm = TRUE) %>% as.numeric -> trait_data$treeheight[i]
+   summarise(mean(height), na.rm = TRUE) %>% unlist() -> trait_data$treeheight[i]
   
   j%>%
-   summarise(mean(length), na.rm = TRUE) %>% as.numeric -> trait_data$leaflength[i]
+   summarise(mean(length), na.rm = TRUE) %>% unlist() -> trait_data$leaflength[i]
   
   j%>%
-   summarise(mean(width), na.rm = TRUE) %>% as.numeric -> trait_data$leafwidth[i]
+   summarise(mean(width), na.rm = TRUE) %>% unlist() -> trait_data$leafwidth[i]
   
    j%>%
-   summarise(mean(ratio), na.rm = TRUE) %>% as.numeric -> trait_data$leafshape[i]
+   summarise(mean(ratio), na.rm = TRUE) %>% unlist() -> trait_data$leafshape[i]
    
     j%>%
-   summarise(mean(leaf_area_estimated), na.rm = TRUE) %>% as.numeric -> trait_data$leafarea[i]
+   summarise(mean(leaf_area_estimated), na.rm = TRUE) %>% unlist() -> trait_data$leafarea[i]
 }
 
 
@@ -288,17 +290,10 @@ for (i in 1:nrow(trait_data)) {
 #str(compar_data)
 
 ```
+
 #Plot median tree traits per grid cell
 ```{r tree_trait_plots, echo =TRUE}
 right_join(mpd_grid, trait_data, by = "ID")->trait_grid
-
-trait_grid$count<-unlist(trait_grid$count)
-trait_grid$treeheight<-unlist(trait_grid$treeheight)
-trait_grid$leaflength<-unlist(trait_grid$leaflength)
-trait_grid$leafwidth<-unlist(trait_grid$leafwidth)
-trait_grid$leafshape<-unlist(trait_grid$leafshape)
-trait_grid$leafarea<-unlist(trait_grid$leafarea)
-
 
 ggplot(trait_grid) +
   geom_sf(data = SA_poly, fill = NA, size = 0.3) +
@@ -328,19 +323,6 @@ ggplot(trait_grid) +
     #rect = element_blank()
     ) + labs(fill = "Leaf Shape")
 
-ggplot(trait_grid) +
-  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
-  geom_sf(aes(fill = leafarea), color = NA) +
-  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Leaf Area") +
-  theme_bw()+
-  theme(
-    #plot.background = element_rect(fill = "#f1f2f3"),
-    #panel.background = element_rect(fill = "#2F4051"),
-    #panel.grid = element_blank(),
-    legend.position = "bottom",
-    #line = element_blank(),
-    #rect = element_blank()
-    ) + labs(fill = "Leaf Area")
 ```
 
 #Rerun JD's Stats
@@ -358,7 +340,39 @@ cor.test(trait_grid$treeheight, trait_grid$leafshape) # -0.65 ***
 summary(lm(log(treeheight) ~ mpd.obs + leafshape, data = trait_grid))
 ```
 
-```{r pgls, include = TRUE}
-pgls()
+### need to pull AET data (and PET from some database) look for NPP net primary productivity data
+
+```{r phylo_path_analysis, include = TRUE}
+#Is there a correlation between leafshape and evapotranspiration?
+#lm(leafshape ~ aet, data = ??)
+
+#Is there a correlation between tree height and species richness? YES
+summary(lm(treeheight ~ ntaxa, data =trait_grid)) #r = 0.479  ** this is the square of the correlation
+cor.test(trait_grid$treeheight, trait_grid$ntaxa) #r = 0.691 
+
+```
+#Model of grid cells **** do next!
+mpd is the response for the outcomes of the mayfield and levine 2010
+ 
+moran's I on the residuals(autocorrelation in space) use the spatial data only (we want it to be low)
+```{r models, include = TRUE}
+#need to add AET or NPP data
+summary(lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa, data = trait_grid))
+plot(lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa, data = trait_grid))
+
+#map the residulals of ^^^
+
+#calculate Moran's I for the residuals
+
 ```
 
+#boosted regression model (mpd ~ everything) brt package in R
+```{r boosted_regression, include =TRUE}
+library(gbm)
+```
+
+#Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
+
+need to plan a spatial model: 
+ 1) include lat and long
+ 2) spatial eigenvectors
