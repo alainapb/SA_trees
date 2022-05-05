@@ -110,6 +110,12 @@ z<-subset(SA_poly, SA_poly$shpname=="acacia_karroo.shp")
 plot(st_geometry(SA_grids))
 plot(st_geometry(z), col = "lightblue", add = T) #add = T is adding the polygon for z to the previous plot
 
+# outline of countries in Southern Africa
+use<-map_data("world", region = c("Angola","Botswana","Lesotho","Mozambique","Malawi:3","Namibia", "Swaziland", "South Africa", "Zambia","Zimbabwe")) %>%
+  dplyr::select(lon = long, lat = lat, group, id= region)
+
+#remove island
+use<-filter(use, lat > -40)
 ```
 #TO DO
 ## 1) overlay the grid and generate a simple species richness map
@@ -138,9 +144,10 @@ richness_grid <- SA_grids %>%
 
 
 ggplot(richness_grid) +
-  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.1) +
   geom_sf(aes(fill = num_species), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Species richness") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)+
   theme_bw()+
   theme(
     #plot.background = element_rect(fill = "#f1f2f3"),
@@ -214,6 +221,7 @@ ggplot(mpd_grid) +
   geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = mpd.obs), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "MPD") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
   theme_bw()+
   theme(
     #plot.background = element_rect(fill = "#f1f2f3"),
@@ -229,6 +237,7 @@ ggplot(mpd_grid) +
   geom_sf(data = SA_grids, fill = "white", color = "black", size = 0.4) +
   geom_sf(aes(fill = mpd.obs.p), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "quantiles (p)") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
   theme_bw()+
   theme(
     #plot.background = element_rect(fill = "#f1f2f3"),
@@ -299,6 +308,7 @@ ggplot(trait_grid) +
   geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = log(treeheight *1000)), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Log (Tree Height in m)") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
   theme_bw()+
   theme(
     #plot.background = element_rect(fill = "#f1f2f3"),
@@ -313,6 +323,7 @@ ggplot(trait_grid) +
   geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = leafshape), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Leaf Shape") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
   theme_bw()+
   theme(
     #plot.background = element_rect(fill = "#f1f2f3"),
@@ -376,3 +387,15 @@ library(gbm)
 need to plan a spatial model: 
  1) include lat and long
  2) spatial eigenvectors
+
+
+#Messing with stuff
+```{r}
+NPP_UWM<-raster("~/Downloads/NPP/npp/dblbnd.adf") #NPP (kg-C/m2/year) from IBIS Simulation “The Nelson Institute Center for Sustainability and the Global Environment, University of Wisconsin-Madison”
+plot(NPP_UWM)
+
+NPP_UWM$dblbnd
+crs(NPP_UWM) <- CRS('+init=EPSG:4326')
+
+```
+
