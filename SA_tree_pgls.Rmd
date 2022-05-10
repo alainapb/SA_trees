@@ -49,12 +49,10 @@ SA_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% tree_data$mat
 ```{r calculate PD, include = FALSE}
 #interspecific distance matrix
 distance_matrix<-cophenetic.phylo(SA_tree)
-
 ```
 
 
 ```{r pgls, echo = TRUE}
-
 #make dataframe
 dat<-data.frame(taxa=SA_tree$tip.label,
                 height=tree_data$height, 
@@ -87,7 +85,6 @@ ggplot(l, mapping = aes(x=height*1000, y = ratio))+
   geom_smooth(method = "lm")+
   #xlim(limits =c(0, 20000))+
   theme_classic()
-
 ```
 
 ```{r load_shape_files, include = FALSE}
@@ -152,7 +149,6 @@ ggplot(richness_grid) +
     #line = element_blank(),
     #rect = element_blank()
   ) + labs(fill = "richness")
-
 ```
 ##Another way to calculate species richness
 ```{r another_way_to_count_species, include = FALSE}
@@ -178,6 +174,7 @@ colnames(output) <- c("lon", "lat", usp)
 xx<-data.frame(long = output[,1], lat = output[,2])
 xx$no_species<-rowSums(output[,3:1178]) #number of species at each lat long
 ```
+
 #Calculate PD for each grid cell (ID)
 ```{r list_of_species_in_each_grid_cell, include = FALSE}
 #### ses.mpd from 'picante'
@@ -211,6 +208,7 @@ comm_matrix<-comm_matrix[,1:1085]
 NRI<-readRDS("NRI_data.rds") 
 NRI$ID<-rownames(NRI)
 ```
+
 #Map the mpd values for each cell
 ```{r mpd_plot, echo = TRUE}
 right_join(richness_grid, NRI, by = "ID")->mpd_grid
@@ -319,7 +317,6 @@ ggplot(trait_grid) +
     #line = element_blank(),
     #rect = element_blank()
     ) + labs(fill = "Leaf Shape")
-
 ```
 
 #Rerun JD's Stats
@@ -338,7 +335,6 @@ summary(lm(log(treeheight) ~ mpd.obs + leafshape, data = trait_grid))
 ```
 
 ### need to pull AET data (and PET from some database) look for NPP net primary productivity data
-
 ```{r phylo_path_analysis, include = TRUE}
 #Is there a correlation between leafshape and evapotranspiration?
 #lm(leafshape ~ aet, data = ??)
@@ -348,6 +344,7 @@ summary(lm(treeheight ~ ntaxa, data =trait_grid)) #r = 0.479  ** this is the squ
 cor.test(trait_grid$treeheight, trait_grid$ntaxa) #r = 0.691 
 
 ```
+
 #Model of grid cells **** do next!
 mpd is the response for the outcomes of the mayfield and levine 2010
  
@@ -373,7 +370,6 @@ library(gbm)
 need to plan a spatial model: 
  1) include lat and long
  2) spatial eigenvectors
-
 
 #Messing with stuff
 ```{r}
