@@ -50,11 +50,6 @@ SA_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% tree_data$mat
 #interspecific distance matrix
 distance_matrix<-cophenetic.phylo(SA_tree)
 
-#make an association matrix to add data to
-df<-data.frame(matrix(ncol=length(SA_tree$tip.label), nrow=length(SA_tree$tip.label)), row.names = SA_tree$tip.label)
-colnames(df)<-SA_tree$tip.label
-
-#mpd<-mpd(df, distance_matrix)
 ```
 
 
@@ -205,6 +200,9 @@ sum(k) # it does!
 #make column names match the tree tip labels 
 colnames(comm_matrix)<-tree_names$matrix_name
 
+#matrix has extra columns that are unnecessary
+comm_matrix<-comm_matrix[,1:1085]
+
 ##code takes time to run
 #ses_results <-ses.mpd(comm_matrix, distance_matrix, null.model = "taxa.labels", runs = 100) #30 minutes
 ##save output as RDS
@@ -218,7 +216,7 @@ NRI$ID<-rownames(NRI)
 right_join(richness_grid, NRI, by = "ID")->mpd_grid
 
 ggplot(mpd_grid) +
-  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = mpd.obs), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "MPD") +
   geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
@@ -233,7 +231,7 @@ ggplot(mpd_grid) +
     ) + labs(fill = "MPD")
 
 ggplot(mpd_grid) +
-  geom_sf(data = SA_poly, fill = "white", color = "grey", size = 0.05) +
+  #geom_sf(data = SA_poly, fill = "white", color = "grey", size = 0.05) +
   geom_sf(data = SA_grids, fill = "white", color = "black", size = 0.4) +
   geom_sf(aes(fill = mpd.obs.p), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "quantiles (p)") +
@@ -255,10 +253,7 @@ ggplot(mpd_grid) +
 trait_data<-data.frame(ID = unique(richness_grid$ID), 
                        count =NA, 
                        treeheight = NA,
-                       leaflength = NA, 
-                       leafwidth = NA, 
-                       leafshape = NA, 
-                       leafarea = NA)
+                       leafshape = NA)
 
 for (i in 1:nrow(trait_data)) {
   
@@ -268,19 +263,10 @@ for (i in 1:nrow(trait_data)) {
    summarise(length(height)) -> trait_data$count[i]
   
   j%>%
-   summarise(mean(height), na.rm = TRUE) %>% unlist() -> trait_data$treeheight[i]
-  
-  j%>%
-   summarise(mean(length), na.rm = TRUE) %>% unlist() -> trait_data$leaflength[i]
-  
-  j%>%
-   summarise(mean(width), na.rm = TRUE) %>% unlist() -> trait_data$leafwidth[i]
+   summarise(mean(height), na.rm = T) %>% unlist() -> trait_data$treeheight[i]
   
    j%>%
-   summarise(mean(ratio), na.rm = TRUE) %>% unlist() -> trait_data$leafshape[i]
-   
-    j%>%
-   summarise(mean(leaf_area_estimated), na.rm = TRUE) %>% unlist() -> trait_data$leafarea[i]
+   summarise(mean(ratio), na.rm = T) %>% unlist() -> trait_data$leafshape[i]
 }
 
 
@@ -305,7 +291,7 @@ for (i in 1:nrow(trait_data)) {
 right_join(mpd_grid, trait_data, by = "ID")->trait_grid
 
 ggplot(trait_grid) +
-  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = log(treeheight *1000)), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Log (Tree Height in m)") +
   geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
@@ -320,7 +306,7 @@ ggplot(trait_grid) +
     ) + labs(fill = "Log (Tree Height in m)")
 
 ggplot(trait_grid) +
-  geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = leafshape), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Leaf Shape") +
   geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
@@ -396,6 +382,40 @@ plot(NPP_UWM)
 
 NPP_UWM$dblbnd
 crs(NPP_UWM) <- CRS('+init=EPSG:4326')
+
+mm<-raster("~/Downloads/dataverse_files/SynthesizedET_2012_01-0000000000-0000000000.tif")
+plot(mm)
+
+
+install.packages("BiocManager")
+BiocManager::install("rhdf5")
+library(rhdf5)
+bio<-h5read("~/Downloads/GFED4.1s_2013.hdf5", "biosphere")
+str(bio)
+
+grids<-h5read("~/Downloads/GFED4.1s_2013.hdf5", "ancill")
+plot(st_geometry(grids$grid_cell_area))
+
+library(terra)
+f <- "~/Downloads/GFED4.1s_2013.hdf5"
+s <- sds(f)
+s
+
+r <- s$NPP
+
+plot(r, 1)
+
+# list all the `hdf5` files 
+files <- list.files(path=".", pattern=paste(".*.h5",sep=""), all.files=FALSE, full.names=TRUE)
+#choose the band that you want using the sds[] option and write GTiff files.
+  for (i in (files)) {
+  sds <- get_subdatasets(i)
+  r2 <- gdal_translate(sds[1], dst_dataset =paste(i,".tif",sep=""))}
+
+help<-raster("~/Downloads/GFED4.1s_2013.hdf5")
+
+#ggplot(grids) +
+#  geom_sf(data = bio, fill = NA, size = 0.3)
 
 ```
 
