@@ -14,7 +14,7 @@ library(caper)
 library(picante)
 library(raster)
 library(scico)
-library(pez)
+library(spdep)
 ```
 
 ```{r load_data, include = FALSE}
@@ -235,7 +235,7 @@ for (i in 1:nrow(trait_data)) {
   subset(tree_names, comm_matrix[i, ] == 1) ->j
   
   j%>%
-   summarise(length(height)) -> trait_data$count[i]
+   summarise(length(height)) %>% unlist() -> trait_data$count[i]
   
   j%>%
    summarise(mean(height, na.rm = T)) %>% unlist() -> trait_data$treeheight[i]
@@ -243,21 +243,6 @@ for (i in 1:nrow(trait_data)) {
    j%>%
    summarise(mean(ratio, na.rm = T)) %>% unlist() -> trait_data$leafshape[i]
 }
-
-
-#library(pez)
-#community<-as.matrix(comm_matrix)
-#traits<-with(tree_names, 
-#             data.frame(treeheight = log(height *1000),
-#                        leaflength = length, 
-#                        leafwidth = width, 
-#                        leafshape = ratio, 
-#                        leafarea = leaf_area,
-#                        row.names = matrix_name))
-#compar_data <- comparative.comm(tree, 
-#                    community, 
-#                    traits)
-#str(compar_data)
 
 ```
 
@@ -312,52 +297,31 @@ summary(lm(treeheight ~ mpd.obs + leafshape, data = trait_grid))
 ```
 
 ### need to pull AET data (and PET from some database) look for NPP net primary productivity data
-```{r phylo_path_analysis, include = TRUE}
-#Is there a correlation between leafshape and evapotranspiration?
-#lm(leafshape ~ aet, data = ??)
-
-#Is there a correlation between tree height and species richness? YES
-summary(lm(treeheight ~ ntaxa, data =trait_grid)) # 0.524  ** this is the square of the correlation
-cor.test(trait_grid$treeheight, trait_grid$ntaxa) #r = 0.724
-
-```
-
-#Model of grid cells **** do next!
-mpd is the response for the outcomes of the mayfield and levine 2010
- 
-moran's I on the residuals(autocorrelation in space) use the spatial data only (we want it to be low)
-
-need to plan a spatial model: 
- 1) include lat and long
- 2) spatial eigenvectors
-```{r models, include = TRUE}
-#need to add AET or NPP data
-summary(lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa, data = trait_grid))
-plot(lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa, data = trait_grid))
-
-#map the residulals of ^^^
-
-#calculate Moran's I for the residuals
-
-```
-
-#boosted regression model (mpd ~ everything) brt package in R
-```{r boosted_regression, include =TRUE}
-#library(gbm)
-```
-
-#Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
-```{r}
-
-```
-
-
 #Messing with NPP and AET data
-```{r}
+```{r NPP_and_AET_data, echo=FALSE}
 #NPP (kg-C/m2/year) from IBIS Simulation “The Nelson Institute Center for Sustainability and the Global Environment, University of Wisconsin-Madison”
 NPP_UWM<-raster("data/NPP_AET_data/NPP/npp/dblbnd.adf") #raster file
 plot(NPP_UWM) 
 crs(NPP_UWM) <- CRS('+init=EPSG:4326') #trying to add coordinates to the file
+
+points<- extract(NPP_UWM, SA_grids)
+str(points)
+unlist(points)->b
+
+#make a new dataframe with the NPP data
+trait_npp_grid<-trait_grid
+trait_npp_grid$npp<-b  #1196 grids of data
+
+#plot the NPP data
+ggplot(trait_npp_grid) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = npp), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Log (Tree Height in m)") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(legend.position = "bottom")+ 
+    labs(fill = "NPP")
+
 
 #MODIS data for evapotranspiration
 modis<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2011361_aid0001.tif")
@@ -381,4 +345,63 @@ s <- sds(f)
 r <- s$NPP
 plot(r, 1)
 ```
+
+#Phylo path analysis
+```{r phylo_path_analysis, include = TRUE}
+#Is there a correlation between leafshape and evapotranspiration? YES
+summary(lm(leafshape ~ npp, data = trait_npp_grid))
+cor.test(trait_npp_grid$leafshape, trait_npp_grid$npp) #r = -0.166 
+plot(leafshape ~ npp, data = trait_npp_grid)
+
+#Is there a correlation between tree height and species richness? YES
+summary(lm(treeheight ~ ntaxa, data =trait_grid)) # 0.524  ** this is the square of the correlation
+cor.test(trait_grid$treeheight, trait_grid$ntaxa) #r = 0.724
+plot(treeheight ~ ntaxa, data =trait_grid)
+```
+
+#Model of grid cells **** do next!
+mpd is the response for the outcomes of the mayfield and levine 2010
+ 
+moran's I on the residuals(autocorrelation in space)
+
+```{r models, include = TRUE}
+#linear model predicting mpd 
+full_model<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + npp, data = trait_npp_grid)
+summary(full_model)
+plot(full_model)
+
+#map the residulals of the full model
+plot(full_model$residuals)
+
+#calculate Moran's I for the residuals
+ #remove grids with NA for npp
+trait_npp_clean<-subset(trait_npp_grid, npp != "NA")
+#determine neighbours
+neighbours <- poly2nb(trait_npp_clean)
+neighbours
+#make weights matrix
+listw <- nb2listw(neighbours)
+listw
+#calculate Moran's I
+globalMoran <- moran.test(full_model$residuals, listw)
+globalMoran #0.74  the residuals of the model are positively autocorrelated
+#plot the correlation
+moran.plot(full_model$residuals, listw = nb2listw(neighbours, style = "W"))
+```
+need to plan a spatial model: 
+ 1) include lat and long
+ 2) spatial eigenvectors
+ 
+#boosted regression model (mpd ~ everything) brt package in R
+```{r boosted_regression, include =TRUE}
+#library(gbm)
+```
+
+#Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
+```{r}
+
+```
+
+
+
 
