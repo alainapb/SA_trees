@@ -326,6 +326,10 @@ cor.test(trait_grid$treeheight, trait_grid$ntaxa) #r = 0.724
 mpd is the response for the outcomes of the mayfield and levine 2010
  
 moran's I on the residuals(autocorrelation in space) use the spatial data only (we want it to be low)
+
+need to plan a spatial model: 
+ 1) include lat and long
+ 2) spatial eigenvectors
 ```{r models, include = TRUE}
 #need to add AET or NPP data
 summary(lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa, data = trait_grid))
@@ -339,56 +343,42 @@ plot(lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa, data = trait_grid))
 
 #boosted regression model (mpd ~ everything) brt package in R
 ```{r boosted_regression, include =TRUE}
-library(gbm)
+#library(gbm)
 ```
 
 #Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
-
-need to plan a spatial model: 
- 1) include lat and long
- 2) spatial eigenvectors
-
-#Messing with stuff
 ```{r}
-NPP_UWM<-raster("~/Downloads/NPP/npp/dblbnd.adf") #NPP (kg-C/m2/year) from IBIS Simulation “The Nelson Institute Center for Sustainability and the Global Environment, University of Wisconsin-Madison”
-plot(NPP_UWM)
 
-NPP_UWM$dblbnd
-crs(NPP_UWM) <- CRS('+init=EPSG:4326')
-
-mm<-raster("~/Downloads/dataverse_files/SynthesizedET_2012_01-0000000000-0000000000.tif")
-plot(mm)
+```
 
 
+#Messing with NPP and AET data
+```{r}
+#NPP (kg-C/m2/year) from IBIS Simulation “The Nelson Institute Center for Sustainability and the Global Environment, University of Wisconsin-Madison”
+NPP_UWM<-raster("data/NPP_AET_data/NPP/npp/dblbnd.adf") #raster file
+plot(NPP_UWM) 
+crs(NPP_UWM) <- CRS('+init=EPSG:4326') #trying to add coordinates to the file
+
+#MODIS data for evapotranspiration
+modis<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2011361_aid0001.tif")
+plot(modis)
+
+#Global Fire Emissions Database, Version 4.1 (GFEDv4) source: https://daac.ornl.gov/VEGETATION/guides/fire_emissions_v4_R1.html
 install.packages("BiocManager")
 BiocManager::install("rhdf5")
 library(rhdf5)
-bio<-h5read("~/Downloads/GFED4.1s_2013.hdf5", "biosphere")
-str(bio)
+#this is multiple data frames combined
+bio<-h5read("~/Downloads/GFED4.1s_2013.hdf5", "biosphere") #only bull out biotic data
+str(bio) 
 
-grids<-h5read("~/Downloads/GFED4.1s_2013.hdf5", "ancill")
+grids<-h5read("~/Downloads/GFED4.1s_2013.hdf5", "ancill") #pull out grid data
 plot(st_geometry(grids$grid_cell_area))
 
+#trying to visualize the data
 library(terra)
 f <- "~/Downloads/GFED4.1s_2013.hdf5"
 s <- sds(f)
-s
-
 r <- s$NPP
-
 plot(r, 1)
-
-# list all the `hdf5` files 
-files <- list.files(path=".", pattern=paste(".*.h5",sep=""), all.files=FALSE, full.names=TRUE)
-#choose the band that you want using the sds[] option and write GTiff files.
-  for (i in (files)) {
-  sds <- get_subdatasets(i)
-  r2 <- gdal_translate(sds[1], dst_dataset =paste(i,".tif",sep=""))}
-
-help<-raster("~/Downloads/GFED4.1s_2013.hdf5")
-
-#ggplot(grids) +
-#  geom_sf(data = bio, fill = NA, size = 0.3)
-
 ```
 
