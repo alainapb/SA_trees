@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggplot2)
+library(sf)
 library(caper)
 library(picante)
 library(raster)
@@ -43,7 +44,6 @@ length(unique(tree_data$map_name)) #there is data for 1085 map_names from the tr
 #subset the tree to only include taxa there is data for 
 SA_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% tree_data$matrix_name))])
 #plot(SA_tree, cex = 0.3, type = "f")
-
 ```
 
 ```{r calculate PD, include = FALSE}
@@ -51,22 +51,22 @@ SA_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% tree_data$mat
 distance_matrix<-cophenetic.phylo(SA_tree)
 ```
 
-
+#Looking at the data
 ```{r pgls, echo = TRUE}
-#make dataframe
+#make dataframe with species name in tree tip order and traits of interest
 dat<-data.frame(taxa=SA_tree$tip.label,
                 height=tree_data$height, 
                 leaf_shape=tree_data$ratio)
-
+#make a comparative data frame required for pgls
 cdat<-comparative.data(data = dat, phy = SA_tree, names.col="taxa")
 
+#Is tree height predicted by leaf shape?
 summary(pgls(log(height*1000) ~ leaf_shape, cdat, lambda = "ML")) #leaf shape predicts height ***; lambda = 0.267
-
+#Is there phylogenetic signal in tree height?
 summary(pgls(log(height*1000) ~ 1, cdat, lambda = "ML")) #lambda = 0.322
-
+#Is there phylogenetic signal in leaf shape?
 summary(pgls(leaf_shape ~ 1, cdat, lambda = "ML")) #lambda = 0.75
 
-summary(lm(log(height*1000) ~ ratio, tree_data)) 
 
 #subset the data to remove 'Exotic' species and NAs
 tree_data %>%
@@ -74,22 +74,19 @@ tree_data %>%
   filter(height != "NA") %>% 
   filter(ratio != "NA")-> l
 
-summary(l)
-
-summary(gls(log(height * 1000) ~ ratio, data = l)) # significant negative correlation (-0.68) 
-cor.test(log(l$height * 1000), l$ratio) # significant negative correlation
 #with increasing tree height there are more round leaves
+summary(lm(log(height * 1000) ~ ratio, data = l)) # significant negative correlation\
+cor.test(log(l$height * 1000), l$ratio) # significant negative correlation r = -0.14
 
-ggplot(l, mapping = aes(x=height*1000, y = ratio))+
+#visual the relationship between tree height and leaf shape
+ggplot(l, mapping = aes(x=log(height*1000), y = ratio))+
   geom_point()+
   geom_smooth(method = "lm")+
-  #xlim(limits =c(0, 20000))+
+  labs(y = "Leaf shape (l/w)", x = "Tree height (mm)")+
   theme_classic()
 ```
 
 ```{r load_shape_files, include = FALSE}
-library(sf)
-
 #See some info on plotting shape files here:
 #https://r-spatial.github.io/sf/articles/sf5.html
 SA_poly<-st_read("data/GIS_DATA/all_no_exotics.shp")
@@ -108,6 +105,11 @@ use<-map_data("world", region = c("Angola","Botswana","Lesotho","Mozambique","Ma
 
 #remove island
 use<-filter(use, lat > -40)
+#remove extra countries 
+use<-filter(use, lat < -15)
+
+ggplot(use) +
+  geom_polygon(mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)
 ```
 #TO DO
 ## 1) overlay the grid and generate a simple species richness map
@@ -119,7 +121,6 @@ use<-filter(use, lat > -40)
 #Species Richness Map
 ```{r, species_richness_map, echo = TRUE}
 #QDS is quarter degree square grids
-
 st_crs(SA_grids)<-4326
 st_crs(SA_poly)
 st_crs(SA_grids)
@@ -149,30 +150,6 @@ ggplot(richness_grid) +
     #line = element_blank(),
     #rect = element_blank()
   ) + labs(fill = "richness")
-```
-##Another way to calculate species richness
-```{r another_way_to_count_species, include = FALSE}
-usp <- unique(SA_poly$shpname)
-r <- raster(res=0.5)
-s <- list()
-for (i in 1:length(usp)) {
-    p <- SA_poly[SA_poly$shpname == usp[i], ]
-    s[[i]] <- rasterize(p, r, field=1, fun="count")
-}       
-ss <- stack(s) 
-sr <- sum(ss>0, na.rm=TRUE)
-
-m <- as.matrix(ss)
-m[is.na(m)] <- 0
-
-i <- which(rowSums(m) > 0) # to remove rows with no species 
-xy <- xyFromCell(r, i)  
-output <- cbind(xy, m[i,])
-colnames(output) <- c("lon", "lat", usp)
-
-
-xx<-data.frame(long = output[,1], lat = output[,2])
-xx$no_species<-rowSums(output[,3:1178]) #number of species at each lat long
 ```
 
 #Calculate PD for each grid cell (ID)
@@ -261,10 +238,10 @@ for (i in 1:nrow(trait_data)) {
    summarise(length(height)) -> trait_data$count[i]
   
   j%>%
-   summarise(mean(height), na.rm = T) %>% unlist() -> trait_data$treeheight[i]
+   summarise(mean(height, na.rm = T)) %>% unlist() -> trait_data$treeheight[i]
   
    j%>%
-   summarise(mean(ratio), na.rm = T) %>% unlist() -> trait_data$leafshape[i]
+   summarise(mean(ratio, na.rm = T)) %>% unlist() -> trait_data$leafshape[i]
 }
 
 
@@ -324,14 +301,14 @@ ggplot(trait_grid) +
 #Is there a correlation between mpd and species richness? 0.33 ***
 cor.test(mpd_grid$mpd.obs, mpd_grid$ntaxa)
 
-#Does mpd capture functional diversity? ...yes 57%
+#Does mpd capture functional diversity? ...yes 62%
 summary(lm(treeheight ~ mpd.obs * ntaxa, data =trait_grid))
 
 #Is there a correlation between height and leaf shape? YES, tall trees have rounder leaves
-cor.test(trait_grid$treeheight, trait_grid$leafshape) # -0.65 ***
+cor.test(trait_grid$treeheight, trait_grid$leafshape) # -0.73 ***
 
-#Is tree height explained by mpd and leaf shape?
-summary(lm(log(treeheight) ~ mpd.obs + leafshape, data = trait_grid))
+#Is tree height explained by mpd and leaf shape?   63%
+summary(lm(treeheight ~ mpd.obs + leafshape, data = trait_grid))
 ```
 
 ### need to pull AET data (and PET from some database) look for NPP net primary productivity data
@@ -340,8 +317,8 @@ summary(lm(log(treeheight) ~ mpd.obs + leafshape, data = trait_grid))
 #lm(leafshape ~ aet, data = ??)
 
 #Is there a correlation between tree height and species richness? YES
-summary(lm(treeheight ~ ntaxa, data =trait_grid)) #r = 0.479  ** this is the square of the correlation
-cor.test(trait_grid$treeheight, trait_grid$ntaxa) #r = 0.691 
+summary(lm(treeheight ~ ntaxa, data =trait_grid)) # 0.524  ** this is the square of the correlation
+cor.test(trait_grid$treeheight, trait_grid$ntaxa) #r = 0.724
 
 ```
 
