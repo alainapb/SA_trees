@@ -301,7 +301,8 @@ summary(lm(treeheight ~ mpd.obs + leafshape, data = trait_grid))
 ### need to pull AET data (and PET from some database) look for NPP net primary productivity data
 #Messing with NPP and AET data
 ```{r NPP_and_AET_data, echo=FALSE}
-#NPP (kg-C/m2/year) from IBIS Simulation “The Nelson Institute Center for Sustainability and the Global Environment, University of Wisconsin-Madison”
+#### NPP (kg-C/m2/year) from https://sage.nelson.wisc.edu/data-and-models/atlas-of-the-biosphere/mapping-the-biosphere/ecosystems/net-primary-productivity/  ####
+#Foley, J.A., I.C. Prentice, N. Ramankutty, S. Levis, D. Pollard, S. Sitch, and A. Haxeltine (1996) An Integrated Biosphere Model of Land Surface Processes, Terrestrial Carbon Balance and Vegetation Dynamics, Global Biogeochemical Cycles, 10, 603-628.
 NPP_UWM<-raster("data/NPP_AET_data/NPP/npp/dblbnd.adf") #raster file
 plot(NPP_UWM) 
 crs(NPP_UWM) <- CRS('+init=EPSG:4326') #trying to add coordinates to the file
@@ -324,12 +325,14 @@ ggplot(trait_npp_grid) +
   theme(legend.position = "bottom")+ 
     labs(fill = "NPP")
 
+#remove grids with NA for npp
+trait_npp_clean<-subset(trait_npp_grid, npp != "NA")
 
-#MODIS data for evapotranspiration
+##### MODIS data for evapotranspiration  ####
 modis<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2011361_aid0001.tif")
 plot(modis)
 
-#Global Fire Emissions Database, Version 4.1 (GFEDv4) source: https://daac.ornl.gov/VEGETATION/guides/fire_emissions_v4_R1.html
+##### Global Fire Emissions Database, Version 4.1 (GFEDv4) source: https://daac.ornl.gov/VEGETATION/guides/fire_emissions_v4_R1.html  ####
 #trying to visualize the data
 library(terra)
 f <- "~/Desktop/NPP_AET_data/GFED4.1s_2013.hdf5"
@@ -364,14 +367,14 @@ ggplot(test1) +
 #Phylo path analysis
 ```{r phylo_path_analysis, include = TRUE}
 #Is there a correlation between leafshape and evapotranspiration? YES
-summary(lm(leafshape ~ npp, data = trait_npp_grid))
-cor.test(trait_npp_grid$leafshape, trait_npp_grid$npp) #r = -0.166 
-plot(leafshape ~ npp, data = trait_npp_grid)
+summary(lm(leafshape ~ NPP, data = test1))
+cor.test(test1$leafshape, test1$NPP) #r = -0.578
+plot(leafshape ~ NPP, data = test1)
 
 #Is there a correlation between tree height and species richness? YES
-summary(lm(treeheight ~ ntaxa, data =trait_grid)) # 0.524  ** this is the square of the correlation
-cor.test(trait_grid$treeheight, trait_grid$ntaxa) #r = 0.724
-plot(treeheight ~ ntaxa, data =trait_grid)
+summary(lm(treeheight ~ ntaxa, data =test1)) 
+cor.test(test1$treeheight, test1$ntaxa) #r = 0.726
+plot(treeheight ~ ntaxa, data =test1)
 ```
 
 #Model of grid cells **** do next!
@@ -381,25 +384,24 @@ moran's I on the residuals(autocorrelation in space)
 
 ```{r models, include = TRUE}
 #linear model predicting mpd 
-full_model<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + npp, data = trait_npp_grid)
+full_model<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = test1)
 summary(full_model)
 plot(full_model)
 
 #map the residulals of the full model
 plot(full_model$residuals)
 
-#calculate Moran's I for the residuals
- #remove grids with NA for npp
-trait_npp_clean<-subset(trait_npp_grid, npp != "NA")
+###calculate Moran's I for the residuals
+
 #determine neighbours
-neighbours <- poly2nb(trait_npp_clean)
+neighbours <- poly2nb(test1)
 neighbours
 #make weights matrix
 listw <- nb2listw(neighbours)
 listw
 #calculate Moran's I
 globalMoran <- moran.test(full_model$residuals, listw)
-globalMoran #0.74  the residuals of the model are positively autocorrelated
+globalMoran #0.79  the residuals of the model are positively autocorrelated
 #plot the correlation
 moran.plot(full_model$residuals, listw = nb2listw(neighbours, style = "W"))
 ```
@@ -410,7 +412,7 @@ need to plan a spatial model:
 #boosted regression model (mpd ~ everything) 
 ```{r boosted_regression, include =TRUE}
 #clean data
-bgr_data<-trait_npp_clean[,c(1,2,7,8,16,17,18)]
+bgr_data<-test1[,c(1,2,7,8,16,17,19)]
 bgr_data<- bgr_data %>% st_drop_geometry()
 # for reproducibility
 set.seed(456)
@@ -427,11 +429,10 @@ gbm.fit <- gbm(
   n.cores = NULL, # will use all cores by default
   verbose = FALSE
   ) 
-print(gbm.fit)
 
 # get MSE (mean square error)
 sqrt(min(gbm.fit$cv.error))
-## [1] 6.169 the model is off by ~6 units of mpd
+## [1] 5.779 the model is off by ~6 units of mpd
 
 # plot loss function as a result of n trees added to the ensemble
 gbm.perf(gbm.fit, method = "cv")
@@ -454,7 +455,7 @@ min_MSE <- which.min(gbm.fit2$cv.error)
 
 # get MSE and compute RMSE (root mean square error)
 sqrt(gbm.fit2$cv.error[min_MSE])
-## [1] 3.5896
+## [1] 0.972   this is a great fit
 
 # plot loss function as a result of n trees added to the ensemble
 gbm.perf(gbm.fit2, method = "cv")
@@ -462,10 +463,10 @@ gbm.perf(gbm.fit2, method = "cv")
 
 #construct a grid of hyperparameter combinations (81)
 hyper_grid <- expand.grid(
-  shrinkage = c(.01, .1, .3),
-  interaction.depth = c(4, 5, 6),
+  shrinkage = c(.1, .3),
+  interaction.depth = c(3, 4, 5),
   n.minobsinnode = c(5, 10, 15),  # minimum number of observations allowed in the trees terminal nodes
-  bag.fraction = c(.65, .8, 1),   # stochastic gradient descent
+  bag.fraction = c(.65, .8),   # stochastic gradient descent
   optimal_trees = 0,               # a place to dump results
   min_RMSE = 0                     # a place to dump results
 )
@@ -504,32 +505,32 @@ for(i in 1:nrow(hyper_grid)) {
 hyper_grid %>% 
   dplyr::arrange(min_RMSE) %>%
   head(10)
-#adjust parameters in hyper_grid to get better models
+#adjust parameters in hyper_grid to get better models, but these models are worse than gbm.fit2
 
 ### train a model with the parameters from the top model
 # for reproducibility
-set.seed(456)
+#set.seed(456)
 
 # train GBM model
-gbm.fit.final <- gbm(
-  formula = mpd.obs ~ .,
-  distribution = "gaussian",
-  data = bgr_data,
-  n.trees = 1453,
-  interaction.depth = 5,
-  shrinkage = 0.1,
-  n.minobsinnode = 5,
-  bag.fraction = .65, 
-  train.fraction = 1,
-  n.cores = NULL, # will use all cores by default
-  verbose = FALSE
-  )
+#gbm.fit.final <- gbm(
+#  formula = mpd.obs ~ .,
+#  distribution = "gaussian",
+#  data = bgr_data,
+#  n.trees = 1453,
+#  interaction.depth = 5,
+#  shrinkage = 0.1,
+#  n.minobsinnode = 5,
+#  bag.fraction = .65, 
+#  train.fraction = 1,
+#  n.cores = NULL, # will use all cores by default
+#  verbose = FALSE
+#  )
 
 #visualize variable importance
 par(mar = c(5, 8, 1, 1))
 summary(
-  gbm.fit.final, 
-  cBars = 5, #the number of variables to show (in order of influence)
+  gbm.fit2, 
+  cBars = 6, #the number of variables to show (in order of influence)
   method = relative.influence, # variables with the largest average decrease in MSE are considered most important (also can use permutation.test.gbm)
   las = 2
   )
@@ -537,10 +538,10 @@ summary(
 #predicting using the best model
 
 # predict values for test data
-pred <- predict(gbm.fit.final, n.trees = gbm.fit.final$n.trees, bgr_data)
+pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_data)
 
 # results
-caret::RMSE(pred, bgr_data$mpd.obs) #0.684
+caret::RMSE(pred, bgr_data$mpd.obs) #0.499
 
 ```
 
