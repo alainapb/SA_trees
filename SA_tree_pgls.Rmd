@@ -300,8 +300,8 @@ summary(lm(treeheight ~ mpd.obs + leafshape, data = trait_grid))
 
 ### need to pull AET data (and PET from some database) look for NPP net primary productivity data
 #Messing with NPP and AET data
-```{r NPP_and_AET_data, echo=FALSE}
-#### NPP (kg-C/m2/year) from https://sage.nelson.wisc.edu/data-and-models/atlas-of-the-biosphere/mapping-the-biosphere/ecosystems/net-primary-productivity/  ####
+```{r NPP_from_1996, include=FALSE}
+#### NPP (kg-C/m2/year) from https://sage.nelson.wisc.edu/data-and-models/atlas-of-the-biosphere/mapping-the-biosphere/ecosystems#/net-primary-productivity/  ####
 #Foley, J.A., I.C. Prentice, N. Ramankutty, S. Levis, D. Pollard, S. Sitch, and A. Haxeltine (1996) An Integrated Biosphere Model of Land Surface Processes, Terrestrial Carbon Balance and Vegetation Dynamics, Global Biogeochemical Cycles, 10, 603-628.
 NPP_UWM<-raster("data/NPP_AET_data/NPP/npp/dblbnd.adf") #raster file
 plot(NPP_UWM) 
@@ -327,11 +327,9 @@ ggplot(trait_npp_grid) +
 
 #remove grids with NA for npp
 trait_npp_clean<-subset(trait_npp_grid, npp != "NA")
+```
 
-##### MODIS data for evapotranspiration  ####
-modis<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2011361_aid0001.tif")
-plot(modis)
-
+```{r NPP_data_from_2013, include =FALSE}
 ##### Global Fire Emissions Database, Version 4.1 (GFEDv4) source: https://daac.ornl.gov/VEGETATION/guides/fire_emissions_v4_R1.html  ####
 #trying to visualize the data
 library(terra)
@@ -364,17 +362,26 @@ ggplot(test1) +
 
 ```
 
+```{r AET_data_from_MODIS, echo =TRUE}
+##### MODIS data for evapotranspiration  ####
+modis1<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2012001_aid0001.tif")
+
+m1<-extract(modis1, SA_grids) #extract data from raster
+str(m1) #check structure
+
+```
+
 #Phylo path analysis
 ```{r phylo_path_analysis, include = TRUE}
-#Is there a correlation between leafshape and evapotranspiration? YES
+#Is there a correlation between leafshape and NPP? YES
 summary(lm(leafshape ~ NPP, data = test1))
 cor.test(test1$leafshape, test1$NPP) #r = -0.578
-plot(leafshape ~ NPP, data = test1)
+plot(leafshape ~ NPP, data = test1) #rounder leaves in areas with higher NPP
 
 #Is there a correlation between tree height and species richness? YES
 summary(lm(treeheight ~ ntaxa, data =test1)) 
 cor.test(test1$treeheight, test1$ntaxa) #r = 0.726
-plot(treeheight ~ ntaxa, data =test1)
+plot(treeheight ~ ntaxa, data =test1) #taller trees in areas with more species 
 ```
 
 #Model of grid cells **** do next!
@@ -404,10 +411,25 @@ globalMoran <- moran.test(full_model$residuals, listw)
 globalMoran #0.79  the residuals of the model are positively autocorrelated
 #plot the correlation
 moran.plot(full_model$residuals, listw = nb2listw(neighbours, style = "W"))
+
+
+###
+model_lat<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + NPP +lat + long, data = test1)
+summary(model_lat)
+plot(model_lat)
+
+plot(model_lat$residuals)
+
+#calculate Moran's I
+latMoran<-moran.test(model_lat$residuals, listw)
+latMoran
+
+#plot the correlation
+moran.plot(model_lat$residuals, listw = nb2listw(neighbours, style = "W"))
 ```
 need to plan a spatial model: 
  1) include lat and long
- 2) spatial eigenvectors
+ 2) spatial eigenvectors 
  
 #boosted regression model (mpd ~ everything) 
 ```{r boosted_regression, include =TRUE}
@@ -535,15 +557,26 @@ summary(
   las = 2
   )
 
+
 #predicting using the best model
 
 # predict values for test data
 pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_data)
-
 # results
 caret::RMSE(pred, bgr_data$mpd.obs) #0.499
-
 ```
+
+```{r}
+#add predictions to data frame
+bgr_data$prediction<-pred
+
+ggplot(bgr_data)+
+  geom_point(aes(x=lat, y = mpd.obs))+
+  geom_line(aes(x=lat, y =prediction))
+```
+
+
+
 
 #Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
 ```{r}
