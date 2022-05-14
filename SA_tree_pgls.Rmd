@@ -180,12 +180,16 @@ colnames(comm_matrix)<-tree_names$matrix_name
 comm_matrix<-comm_matrix[,1:1085]
 
 ##code takes time to run
-#ses_results <-ses.mpd(comm_matrix, distance_matrix, null.model = "taxa.labels", runs = 100) #30 minutes
+#ses_results <-ses.mpd(comm_matrix, distance_matrix, null.model = "taxa.labels", runs = 1000) #30 minutes
 ##save output as RDS
 #saveRDS(ses_results, "NRI_data.rds")
 ##read in ses.mpd results
 NRI<-readRDS("NRI_data.rds") 
 NRI$ID<-rownames(NRI)
+
+#species are more clustered than we would expect
+plot(NRI$mpd.obs.z)
+abline(h=0)
 ```
 
 #Map the mpd values for each cell
@@ -208,10 +212,25 @@ ggplot(mpd_grid) +
     ) + labs(fill = "MPD")
 
 ggplot(mpd_grid) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = mpd.obs.z), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "SES") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+    ) + labs(fill = "MPD")
+
+ggplot(mpd_grid) +
   #geom_sf(data = SA_poly, fill = "white", color = "grey", size = 0.05) +
   geom_sf(data = SA_grids, fill = "white", color = "black", size = 0.4) +
   geom_sf(aes(fill = mpd.obs.p), color = NA) +
-  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "quantiles (p)") +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "quantiles (p) of SES") +
   geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
   theme_bw()+
   theme(
@@ -287,20 +306,21 @@ ggplot(trait_grid) +
 ```{r correlations_regressions, include = TRUE}
 #Is there a correlation between mpd and species richness? 0.33 ***
 cor.test(mpd_grid$mpd.obs, mpd_grid$ntaxa)
+cor.test(mpd_grid$mpd.obs.z, mpd_grid$ntaxa)
 
-#Does mpd capture functional diversity? ...yes 62%
-summary(lm(treeheight ~ mpd.obs * ntaxa, data =trait_grid))
+#Does mpd capture functional diversity? ...yes 59%
+summary(lm(log(treeheight*1000) ~ mpd.obs * ntaxa, data =trait_grid))
 
 #Is there a correlation between height and leaf shape? YES, tall trees have rounder leaves
-cor.test(trait_grid$treeheight, trait_grid$leafshape) # -0.73 ***
+cor.test(log(trait_grid$treeheight*1000), trait_grid$leafshape) # -0.75 ***
 
-#Is tree height explained by mpd and leaf shape?   63%
-summary(lm(treeheight ~ mpd.obs + leafshape, data = trait_grid))
+#Is tree height explained by mpd and leaf shape?   65%
+summary(lm(log(treeheight*1000) ~ mpd.obs + leafshape, data = trait_grid))
 ```
 
 ### need to pull AET data (and PET from some database) look for NPP net primary productivity data
-#Messing with NPP and AET data
-```{r NPP_from_1996, include=FALSE}
+#Adding NPP and AET data
+```{r NPP_from_1996, include=FALSE, echo =FALSE}
 #### NPP (kg-C/m2/year) from https://sage.nelson.wisc.edu/data-and-models/atlas-of-the-biosphere/mapping-the-biosphere/ecosystems#/net-primary-productivity/  ####
 #Foley, J.A., I.C. Prentice, N. Ramankutty, S. Levis, D. Pollard, S. Sitch, and A. Haxeltine (1996) An Integrated Biosphere Model of Land Surface Processes, Terrestrial Carbon Balance and Vegetation Dynamics, Global Biogeochemical Cycles, 10, 603-628.
 NPP_UWM<-raster("data/NPP_AET_data/NPP/npp/dblbnd.adf") #raster file
@@ -379,9 +399,9 @@ cor.test(test1$leafshape, test1$NPP) #r = -0.578
 plot(leafshape ~ NPP, data = test1) #rounder leaves in areas with higher NPP
 
 #Is there a correlation between tree height and species richness? YES
-summary(lm(treeheight ~ ntaxa, data =test1)) 
-cor.test(test1$treeheight, test1$ntaxa) #r = 0.726
-plot(treeheight ~ ntaxa, data =test1) #taller trees in areas with more species 
+summary(lm(log(treeheight*1000) ~ ntaxa, data =test1)) 
+cor.test(log(test1$treeheight*1000), test1$ntaxa) #r = 0.712
+plot(log(treeheight*1000) ~ ntaxa, data =test1) #taller trees in areas with more species 
 ```
 
 #Model of grid cells **** do next!
@@ -390,13 +410,21 @@ mpd is the response for the outcomes of the mayfield and levine 2010
 moran's I on the residuals(autocorrelation in space)
 
 ```{r models, include = TRUE}
-#linear model predicting mpd 
-full_model<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = test1)
-summary(full_model)
-plot(full_model)
+#linear model predicting observed mpd 
+full_model_obs<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = test1)
+summary(full_model_obs)
+plot(full_model_obs)
 
 #map the residulals of the full model
-plot(full_model$residuals)
+plot(full_model_obs$residuals)
+
+#linear model predicting SES of mpd
+full_model_ses<-lm(mpd.obs.z ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = test1)
+summary(full_model_ses)
+plot(full_model_ses)
+
+#map the residuals
+plot(full_model_ses$residuals)
 
 ###calculate Moran's I for the residuals
 
@@ -407,14 +435,19 @@ neighbours
 listw <- nb2listw(neighbours)
 listw
 #calculate Moran's I
-globalMoran <- moran.test(full_model$residuals, listw)
-globalMoran #0.79  the residuals of the model are positively autocorrelated
-#plot the correlation
-moran.plot(full_model$residuals, listw = nb2listw(neighbours, style = "W"))
+#observed mpd
+globalMoran_obs <- moran.test(full_model_obs$residuals, listw)
+globalMoran_obs #0.79  the residuals of the model are positively autocorrelated
+#SES mpd
+globalMoran_ses <- moran.test(full_model_ses$residuals, listw)
+globalMoran_ses #0.83  the residuals of the model are positively autocorrelated
+#plot the correlations
+moran.plot(full_model_obs$residuals, listw = nb2listw(neighbours, style = "W"))
+moran.plot(full_model_ses$residuals, listw = nb2listw(neighbours, style = "W"))
 
 
 ###
-model_lat<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + NPP +lat + long, data = test1)
+model_lat<-lm(mpd.obs.z ~ log(treeheight*1000) + leafshape + ntaxa + NPP + lat + long, data = test1)
 summary(model_lat)
 plot(model_lat)
 
@@ -434,14 +467,14 @@ need to plan a spatial model:
 #boosted regression model (mpd ~ everything) 
 ```{r boosted_regression, include =TRUE}
 #clean data
-bgr_data<-test1[,c(1,2,7,8,16,17,19)]
+bgr_data<-test1[,c(1,2,7,12,16,17,19)]
 bgr_data<- bgr_data %>% st_drop_geometry()
 # for reproducibility
 set.seed(456)
 
 # train GBM model
 gbm.fit <- gbm(
-  formula = mpd.obs ~ .,
+  formula = mpd.obs.z ~ .,
   distribution = "gaussian",
   data = bgr_data,
   n.trees = 10000,
@@ -454,14 +487,14 @@ gbm.fit <- gbm(
 
 # get MSE (mean square error)
 sqrt(min(gbm.fit$cv.error))
-## [1] 5.779 the model is off by ~6 units of mpd
+## [1] 0.4902824 the model is off by ~.5 units of mpd.z
 
 # plot loss function as a result of n trees added to the ensemble
 gbm.perf(gbm.fit, method = "cv")
 
 # train GBM model
 gbm.fit2 <- gbm(
-  formula = mpd.obs ~ .,
+  formula = mpd.obs.z ~ .,
   distribution = "gaussian",
   data = bgr_data,
   n.trees = 5000,
@@ -477,7 +510,7 @@ min_MSE <- which.min(gbm.fit2$cv.error)
 
 # get MSE and compute RMSE (root mean square error)
 sqrt(gbm.fit2$cv.error[min_MSE])
-## [1] 0.972   this is a great fit
+## [1] 0.08042574   this is a great fit
 
 # plot loss function as a result of n trees added to the ensemble
 gbm.perf(gbm.fit2, method = "cv")
@@ -563,7 +596,7 @@ summary(
 # predict values for test data
 pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_data)
 # results
-caret::RMSE(pred, bgr_data$mpd.obs) #0.499
+caret::RMSE(pred, bgr_data$mpd.obs.z) #0.040  good model
 ```
 
 ```{r}
@@ -571,12 +604,13 @@ caret::RMSE(pred, bgr_data$mpd.obs) #0.499
 bgr_data$prediction<-pred
 
 ggplot(bgr_data)+
-  geom_point(aes(x=lat, y = mpd.obs))+
-  geom_line(aes(x=lat, y =prediction))
+  geom_line(aes(y = mpd.obs.z, x = leafshape))+
+  geom_line(aes(y =prediction, x = leafshape), color = "red")
+
+
+plot(prediction ~ leafshape + ntaxa + lat, bgr_data, pch = 19, col = "red")
+points(mpd.obs.z ~ leafshape + ntaxa + lat, bgr_data)
 ```
-
-
-
 
 #Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
 ```{r}
