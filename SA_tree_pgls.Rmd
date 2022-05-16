@@ -630,12 +630,23 @@ gbm.fit.final <- gbm(
 ```
 
 
-
-#Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
-```{r}
+#Surface leaf area data 
+```{r source_for_SLA_data, include = FALSE}
+#Botanical Information and Ecology Network
+library(BIEN)
+#make tree data names match BIEN names
+species_names<-(gsub( "_", " ", tree_data$Scientific_name))
+#remove sub species identities
+sub("^(\\S*\\s+\\S+).*", "\\1", species_names)->species_names_clean
+#search BIEN for the species names
+BIEN_trait_species(species_names_clean) -> BIEN_data
+#pull out surface leaf area measurements
+subset(BIEN_data, trait_name == "leaf area per leaf dry mass")->SLA_data
+unique(SLA_data$scrubbed_species_binomial) #only 79 of the 1085 species 
 
 ```
 
+#Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
 
 
 
