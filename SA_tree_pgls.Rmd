@@ -53,8 +53,8 @@ SA_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% tree_data$mat
 distance_matrix<-cophenetic.phylo(SA_tree)
 ```
 
-#Looking at the data
-```{r pgls, echo = TRUE}
+#Looking at the data 
+```{r pgls, echo = TRUE, eval = FALSE}
 #make dataframe with species name in tree tip order and traits of interest
 dat<-data.frame(taxa=SA_tree$tip.label,
                 height=tree_data$height, 
@@ -224,13 +224,13 @@ ggplot(mpd_grid) +
     legend.position = "bottom",
     #line = element_blank(),
     #rect = element_blank()
-    ) + labs(fill = "MPD")
+    ) + labs(fill = "SES (more or less phylogenetically clustered than expected")
 
 ggplot(mpd_grid) +
   #geom_sf(data = SA_poly, fill = "white", color = "grey", size = 0.05) +
   geom_sf(data = SA_grids, fill = "white", color = "black", size = 0.4) +
   geom_sf(aes(fill = mpd.obs.p), color = NA) +
-  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "quantiles (p) of SES") +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "quantiles of SES") +
   geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
   theme_bw()+
   theme(
@@ -240,7 +240,7 @@ ggplot(mpd_grid) +
     legend.position = "bottom",
     #line = element_blank(),
     #rect = element_blank()
-    ) + labs(fill = "quantiles (p)")
+    ) + labs(fill = "quantiles of SES (> 0.95 indicates phylogenetic evenness)")
 # high quantiles (mpd.obs.p > 0.95) indicate phylogenetic evenness, or a greater phylogenetic distance among co-occurring species than expected.
 ```
 #Summarise tree traits for each grid cell 
@@ -320,7 +320,7 @@ summary(lm(log(treeheight*1000) ~ mpd.obs + leafshape, data = trait_grid))
 
 ### need to pull AET data (and PET from some database) look for NPP net primary productivity data
 #Adding NPP and AET data
-```{r NPP_from_1996, include=FALSE, echo =FALSE}
+```{r NPP_from_1996, include=FALSE, eval=FALSE}
 #### NPP (kg-C/m2/year) from https://sage.nelson.wisc.edu/data-and-models/atlas-of-the-biosphere/mapping-the-biosphere/ecosystems#/net-primary-productivity/  ####
 #Foley, J.A., I.C. Prentice, N. Ramankutty, S. Levis, D. Pollard, S. Sitch, and A. Haxeltine (1996) An Integrated Biosphere Model of Land Surface Processes, Terrestrial Carbon Balance and Vegetation Dynamics, Global Biogeochemical Cycles, 10, 603-628.
 NPP_UWM<-raster("data/NPP_AET_data/NPP/npp/dblbnd.adf") #raster file
@@ -352,25 +352,28 @@ trait_npp_clean<-subset(trait_npp_grid, npp != "NA")
 ```{r NPP_data_from_2013, include =FALSE}
 ##### Global Fire Emissions Database, Version 4.1 (GFEDv4) source: https://daac.ornl.gov/VEGETATION/guides/fire_emissions_v4_R1.html  ####
 #trying to visualize the data
-library(terra)
-f <- "~/Desktop/NPP_AET_data/GFED4.1s_2013.hdf5"
-s <- sds(f) #S4 
+#library(terra)
+#f <- "~/Desktop/NPP_AET_data/GFED4.1s_2013.hdf5"
+#s <- sds(f) #S4 
 #pull the data we want into a dataframe
-smaller<-data.frame(c(NPP = s$NPP, lat = s$lat, long = s$lon, grid_cell_area =s$grid_cell_area))
+#smaller<-data.frame(c(NPP = s$NPP, lat = s$lat, long = s$lon, grid_cell_area =s$grid_cell_area))
 #subset the data to the lat and lon we are interested in
-subset(smaller, lat < -14) -> evenless
-subset(evenless, lon > 12) ->less
-subset(less, lon <37) ->less2
-subset(less2, lat > -35) -> less3
+#subset(smaller, lat < -14) -> evenless
+#subset(evenless, lon > 12) ->less
+#subset(less, lon <37) ->less2
+#subset(less2, lat > -35) -> less3
 
 #make it an sf
-my.sf.point <- st_as_sf(x = less3, 
-                        coords = c("lon", "lat"),
-                        crs = "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+#my.sf.point <- st_as_sf(x = less3, 
+#                        coords = c("lon", "lat"),
+#                        crs = "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 
-st_join(trait_npp_clean, my.sf.point)->test1
+#st_join(trait_npp_grid, my.sf.point)->test1
+#saveRDS(test1, "trait_npp_data.rds")
+##read in ses.mpd results
+trait_npp_data<-readRDS("trait_npp_data.rds") 
 
-ggplot(test1) +
+ggplot(trait_npp_data) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = NPP), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "NPP (g C/m2/month)") +
@@ -378,30 +381,34 @@ ggplot(test1) +
   theme_bw()+
   theme(legend.position = "bottom")+ 
     labs(fill = "NPP")
-
-
 ```
 
 ```{r AET_data_from_MODIS, echo =TRUE}
 ##### MODIS data for evapotranspiration  ####
-modis1<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2012001_aid0001.tif")
+#modis1<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2012001_aid0001.tif")
 
-m1<-extract(modis1, SA_grids) #extract data from raster
-str(m1) #check structure
+#m1<-extract(modis1, SA_grids) #extract data from raster
+#str(m1) #check structure, 1207 grids with 14400 data points each... 
+
+#saveRDS(m1, "AET_data.rds")
+##read in ses.mpd results
+AET<-readRDS("AET_data.rds") 
+
+
 
 ```
 
 #Phylo path analysis
 ```{r phylo_path_analysis, include = TRUE}
 #Is there a correlation between leafshape and NPP? YES
-summary(lm(leafshape ~ NPP, data = test1))
+summary(lm(leafshape ~ NPP, data = trait_npp_data))
 cor.test(test1$leafshape, test1$NPP) #r = -0.578
-plot(leafshape ~ NPP, data = test1) #rounder leaves in areas with higher NPP
+plot(leafshape ~ NPP, data = trait_npp_data) #rounder leaves in areas with higher NPP
 
 #Is there a correlation between tree height and species richness? YES
-summary(lm(log(treeheight*1000) ~ ntaxa, data =test1)) 
-cor.test(log(test1$treeheight*1000), test1$ntaxa) #r = 0.712
-plot(log(treeheight*1000) ~ ntaxa, data =test1) #taller trees in areas with more species 
+summary(lm(log(treeheight*1000) ~ ntaxa, data = trait_npp_data)) 
+cor.test(log(trait_npp_data$treeheight*1000), trait_npp_data$ntaxa) #r = 0.712
+plot(log(treeheight*1000) ~ ntaxa, data = trait_npp_data) #taller trees in areas with more species 
 ```
 
 #Model of grid cells **** do next!
@@ -411,7 +418,7 @@ moran's I on the residuals(autocorrelation in space)
 
 ```{r models, include = TRUE}
 #linear model predicting observed mpd 
-full_model_obs<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = test1)
+full_model_obs<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = trait_npp_data)
 summary(full_model_obs)
 plot(full_model_obs)
 
@@ -419,7 +426,7 @@ plot(full_model_obs)
 plot(full_model_obs$residuals)
 
 #linear model predicting SES of mpd
-full_model_ses<-lm(mpd.obs.z ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = test1)
+full_model_ses<-lm(mpd.obs.z ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = trait_npp_data)
 summary(full_model_ses)
 plot(full_model_ses)
 
@@ -429,7 +436,7 @@ plot(full_model_ses$residuals)
 ###calculate Moran's I for the residuals
 
 #determine neighbours
-neighbours <- poly2nb(test1)
+neighbours <- poly2nb(trait_npp_data)
 neighbours
 #make weights matrix
 listw <- nb2listw(neighbours)
@@ -447,7 +454,7 @@ moran.plot(full_model_ses$residuals, listw = nb2listw(neighbours, style = "W"))
 
 
 ###
-model_lat<-lm(mpd.obs.z ~ log(treeheight*1000) + leafshape + ntaxa + NPP + lat + long, data = test1)
+model_lat<-lm(mpd.obs.z ~ log(treeheight*1000) + leafshape + ntaxa + NPP + lat + long, data = trait_npp_data)
 summary(model_lat)
 plot(model_lat)
 
@@ -465,45 +472,49 @@ need to plan a spatial model:
  2) spatial eigenvectors 
  
 #boosted regression model (mpd ~ everything) 
-```{r boosted_regression, include =TRUE}
+```{r boosted_regression, echo =TRUE}
 #clean data
-bgr_data<-test1[,c(1,2,7,12,16,17,19)]
-bgr_data<- bgr_data %>% st_drop_geometry()
+#bgr_data<-trait_npp_data[,c(1,2,7,12,16,17,19)]
+#bgr_data<- bgr_data %>% st_drop_geometry()
 # for reproducibility
-set.seed(456)
+#set.seed(456)
 
 # train GBM model
-gbm.fit <- gbm(
-  formula = mpd.obs.z ~ .,
-  distribution = "gaussian",
-  data = bgr_data,
-  n.trees = 10000,
-  interaction.depth = 1,
-  shrinkage = 0.001,
-  cv.folds = 5,
-  n.cores = NULL, # will use all cores by default
-  verbose = FALSE
-  ) 
+#gbm.fit <- gbm(
+#  formula = mpd.obs.z ~ .,
+#  distribution = "gaussian",
+#  data = bgr_data,
+#  n.trees = 10000,
+#  interaction.depth = 1,
+#  shrinkage = 0.001,
+#  cv.folds = 5,
+#  n.cores = NULL, # will use all cores by default
+#  verbose = FALSE
+#  ) 
 
 # get MSE (mean square error)
-sqrt(min(gbm.fit$cv.error))
+#sqrt(min(gbm.fit$cv.error))
 ## [1] 0.4902824 the model is off by ~.5 units of mpd.z
 
 # plot loss function as a result of n trees added to the ensemble
-gbm.perf(gbm.fit, method = "cv")
+#gbm.perf(gbm.fit, method = "cv")
 
 # train GBM model
-gbm.fit2 <- gbm(
-  formula = mpd.obs.z ~ .,
-  distribution = "gaussian",
-  data = bgr_data,
-  n.trees = 5000,
-  interaction.depth = 3, #increase the depth of each tree
-  shrinkage = 0.1,       #increase the learning rate to take larger steps down the gradient descent
-  cv.folds = 5,
-  n.cores = NULL,
-  verbose = FALSE
-  )
+#gbm.fit2 <- gbm(
+#  formula = mpd.obs.z ~ .,
+#  distribution = "gaussian",
+#  data = bgr_data,
+#  n.trees = 5000,
+#  interaction.depth = 3, #increase the depth of each tree
+#  shrinkage = 0.1,       #increase the learning rate to take larger steps down the gradient descent
+#  cv.folds = 5,
+#  n.cores = NULL,
+#  verbose = FALSE
+#  )
+
+#save the model for easy use
+#saveRDS(gbm.fit2, "gbm.fit2.rds")
+gbm.fit2<-readRDS("gbm.fit2.rds")
 
 # find index for n trees with minimum CV error
 min_MSE <- which.min(gbm.fit2$cv.error)
@@ -515,7 +526,39 @@ sqrt(gbm.fit2$cv.error[min_MSE])
 # plot loss function as a result of n trees added to the ensemble
 gbm.perf(gbm.fit2, method = "cv")
 
+#visualize variable importance
+par(mar = c(5, 8, 1, 1))
+summary(
+  gbm.fit2, 
+  cBars = 6, #the number of variables to show (in order of influence)
+  method = relative.influence, # variables with the largest average decrease in MSE are considered most important (also can use permutation.test.gbm)
+  las = 2
+  )
 
+#predicting using the best model
+
+# predict values for test data
+pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_data)
+# results
+caret::RMSE(pred, bgr_data$mpd.obs.z) #0.040  good model
+```
+
+#How well do the boosted regession model predictions match the data?
+```{r plot_bgr_predictions, echo = TRUE}
+#add predictions to data frame
+bgr_data$prediction<-pred
+
+ggplot(bgr_data)+
+  geom_line(aes(y = mpd.obs.z, x = leafshape))+
+  geom_line(aes(y =prediction, x = leafshape), color = "red")
+
+
+plot(prediction ~ leafshape + ntaxa + lat, bgr_data, pch = 19, col = "red")
+plot(mpd.obs.z ~ leafshape + ntaxa + lat, bgr_data)
+```
+
+We don't need to use the chunk below because the second model was a great fit
+```{r bgr_find_best_parameters, eval = FALSE}
 #construct a grid of hyperparameter combinations (81)
 hyper_grid <- expand.grid(
   shrinkage = c(.1, .3),
@@ -538,23 +581,27 @@ for(i in 1:nrow(hyper_grid)) {
   set.seed(456)
   
   # train model
-  gbm.tune <- gbm(
-    formula = mpd.obs ~ .,
-    distribution = "gaussian",
-    data = random_bgr_train,
-    n.trees = 5000,
-    interaction.depth = hyper_grid$interaction.depth[i],
-    shrinkage = hyper_grid$shrinkage[i],
-    n.minobsinnode = hyper_grid$n.minobsinnode[i],
-    bag.fraction = hyper_grid$bag.fraction[i],
-    train.fraction = .75,
-    n.cores = NULL,
-    verbose = FALSE
-  )
+#  gbm.tune <- gbm(
+#    formula = mpd.obs ~ .,
+#    distribution = "gaussian",
+#    data = random_bgr_train,
+#    n.trees = 5000,
+#    interaction.depth = hyper_grid$interaction.depth[i],
+#    shrinkage = hyper_grid$shrinkage[i],
+#    n.minobsinnode = hyper_grid$n.minobsinnode[i],
+#    bag.fraction = hyper_grid$bag.fraction[i],
+#    train.fraction = .75,
+#    n.cores = NULL,
+#    verbose = FALSE
+#  )
 # add min training error and trees to grid
-  hyper_grid$optimal_trees[i] <- which.min(gbm.tune$valid.error)
-  hyper_grid$min_RMSE[i] <- sqrt(min(gbm.tune$valid.error))
-}
+#  hyper_grid$optimal_trees[i] <- which.min(gbm.tune$valid.error)
+#  hyper_grid$min_RMSE[i] <- sqrt(min(gbm.tune$valid.error))
+#  
+#  saveRDS(hyper_grid, "hyper_grid.rds")
+#}
+
+hyper_grid<-readRDS("hyper_grid.rds")
 
 #show top models 
 hyper_grid %>% 
@@ -564,53 +611,25 @@ hyper_grid %>%
 
 ### train a model with the parameters from the top model
 # for reproducibility
-#set.seed(456)
+set.seed(456)
 
 # train GBM model
-#gbm.fit.final <- gbm(
-#  formula = mpd.obs ~ .,
-#  distribution = "gaussian",
-#  data = bgr_data,
-#  n.trees = 1453,
-#  interaction.depth = 5,
-#  shrinkage = 0.1,
-#  n.minobsinnode = 5,
-#  bag.fraction = .65, 
-#  train.fraction = 1,
-#  n.cores = NULL, # will use all cores by default
-#  verbose = FALSE
-#  )
-
-#visualize variable importance
-par(mar = c(5, 8, 1, 1))
-summary(
-  gbm.fit2, 
-  cBars = 6, #the number of variables to show (in order of influence)
-  method = relative.influence, # variables with the largest average decrease in MSE are considered most important (also can use permutation.test.gbm)
-  las = 2
+gbm.fit.final <- gbm(
+  formula = mpd.obs ~ .,
+  distribution = "gaussian",
+  data = bgr_data,
+  n.trees = 1453,
+  interaction.depth = 5,
+  shrinkage = 0.1,
+  n.minobsinnode = 5,
+  bag.fraction = .65, 
+  train.fraction = 1,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
   )
-
-
-#predicting using the best model
-
-# predict values for test data
-pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_data)
-# results
-caret::RMSE(pred, bgr_data$mpd.obs.z) #0.040  good model
 ```
 
-```{r}
-#add predictions to data frame
-bgr_data$prediction<-pred
 
-ggplot(bgr_data)+
-  geom_line(aes(y = mpd.obs.z, x = leafshape))+
-  geom_line(aes(y =prediction, x = leafshape), color = "red")
-
-
-plot(prediction ~ leafshape + ntaxa + lat, bgr_data, pch = 19, col = "red")
-points(mpd.obs.z ~ leafshape + ntaxa + lat, bgr_data)
-```
 
 #Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
 ```{r}
