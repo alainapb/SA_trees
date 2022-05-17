@@ -45,11 +45,25 @@ tree_data %>%
   filter(ratio != "NA")-> corr_data
 ##make a tree to match
 corr_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% corr_data$matrix_name))])
-##make models
+
+##make height models
 height_null<-gls(height ~ 1, corr_data)
 height_tree<-gls(height ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.1
 ##compare models
 anova(height_null, height_tree) #model with phylogeny is better (p = 0.008)
+
+##make leaf shape models
+ratio_null<-gls(ratio ~ 1, corr_data)
+ratio_tree<-gls(ratio ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.763
+##compare models
+anova(ratio_null, ratio_tree) #model with phylogeny is better (p < 0.0001)
+
+##make leaf area models
+leafarea_null<-gls(leaf_area ~ 1, corr_data)
+leafarea_tree<-gls(leaf_area ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.413
+##compare models
+anova(leafarea_null, leafarea_tree) #model with phylogeny is better (p < 0.0001)
+
 ```
 
 
