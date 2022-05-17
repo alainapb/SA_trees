@@ -1,0 +1,219 @@
+---
+title: "Plots and analyses"
+author: "APB"
+date: "5/17/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load_data}
+#all trait data per grid cell
+trait_npp_data<-readRDS("trait_npp_data.rds") 
+#phylogeny
+tree<-readRDS("SA_tree.rds")
+#trait data per tree tip
+tree_data<-readRDS("tree_data.rds")
+```
+
+#Is there phylogenetic signal in tree traits?
+```{r test_phylo_signal, echo = TRUE}
+#First method uses fitContinous in the package 'geiger'
+library(geiger)
+
+##create named vectors for traits of interest
+height<-tree_data$height
+names(height)<-tree_data$matrix_name
+ratio<-tree_data$ratio
+names(ratio)<-tree_data$matrix_name
+leafarea<-tree_data$leaf_area
+names(leafarea)<-tree_data$matrix_name
+
+##check for phylogenetic signal
+height_lambda<-fitContinuous(tree, height, model = "lambda")
+ratio_lambda<-fitContinuous(tree, ratio, model = "lambda")
+leafarea_lambda<-fitContinuous(tree, leafarea, model = "lambda")
+
+
+#Second method uses gls() comparing a null model to a model that includes the only the tree
+##remove NAs and exotics
+tree_data %>%
+  filter(height != "Exotic") %>%
+  filter(height != "NA") %>% 
+  filter(ratio != "NA")-> corr_data
+##make a tree to match
+corr_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% corr_data$matrix_name))])
+##make models
+height_null<-gls(height ~ 1, corr_data)
+height_tree<-gls(height ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.1
+##compare models
+anova(height_null, height_tree) #model with phylogeny is better (p = 0.008)
+```
+
+
+
+#Grid level analyses
+```{r correlations, echo = TRUE}
+#Is there a correlation between leafshape and NPP? YES
+summary(lm(leafshape ~ NPP, data = trait_npp_data))
+cor.test(test1$leafshape, test1$NPP) #r = -0.578
+plot(leafshape ~ NPP, data = trait_npp_data) #rounder leaves in areas with higher NPP
+
+#Is there a correlation between leaf area and NPP? YES
+summary(lm(leafarea ~ NPP, data = trait_npp_data))
+cor.test(test1$leafarea, test1$NPP) #r = 0.55
+plot(leafarea ~ NPP, data = trait_npp_data) #leaves with larger surface areas in grids with higher NPP
+
+#Is there a correlation between tree height and species richness? YES
+summary(lm(log(treeheight*1000) ~ ntaxa, data = trait_npp_data)) 
+cor.test(log(trait_npp_data$treeheight*1000), trait_npp_data$ntaxa) #r = 0.712
+plot(log(treeheight*1000) ~ ntaxa, data = trait_npp_data) #taller trees in areas with more species 
+```
+
+#Model of grid cells
+mpd is the response for the outcomes of the mayfield and levine 2010
+ 
+moran's I on the residuals(autocorrelation in space)
+
+```{r models, include = TRUE}
+#linear model predicting observed mpd 
+full_model_obs<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = trait_npp_data)
+summary(full_model_obs)
+plot(full_model_obs)
+
+#map the residulals of the full model
+plot(full_model_obs$residuals)
+
+#linear model predicting SES of mpd
+full_model_ses<-lm(mpd.obs.z ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = trait_npp_data)
+summary(full_model_ses)
+plot(full_model_ses)
+
+#map the residuals
+plot(full_model_ses$residuals)
+
+###calculate Moran's I for the residuals
+
+#determine neighbours
+neighbours <- poly2nb(trait_npp_data)
+
+#make weights matrix
+listw <- nb2listw(neighbours)
+
+#calculate Moran's I
+#observed mpd
+globalMoran_obs <- moran.test(full_model_obs$residuals, listw)
+globalMoran_obs #0.79  the residuals of the model are positively autocorrelated
+#SES mpd
+globalMoran_ses <- moran.test(full_model_ses$residuals, listw)
+globalMoran_ses #0.83  the residuals of the model are positively autocorrelated
+#plot the correlations
+moran.plot(full_model_obs$residuals, listw = nb2listw(neighbours, style = "W"))
+moran.plot(full_model_ses$residuals, listw = nb2listw(neighbours, style = "W"))
+
+
+###
+model_lat<-lm(mpd.obs.z ~ log(treeheight*1000) + leafshape + ntaxa + NPP + lat + long, data = trait_npp_data)
+summary(model_lat)
+plot(model_lat)
+
+plot(model_lat$residuals)
+
+#calculate Moran's I
+latMoran<-moran.test(model_lat$residuals, listw)
+latMoran #still has a high spatial autocorrelation
+
+#plot the correlation
+moran.plot(model_lat$residuals, listw = nb2listw(neighbours, style = "W"))
+```
+need to plan a spatial model: 
+ 1) include lat and long
+ 2) spatial eigenvectors 
+ 
+#boosted regression model (mpd ~ everything) 
+```{r boosted_regression, echo =TRUE}
+#clean data
+#bgr_data<-trait_npp_data[,c(1,2,7,12,16,17,19)]
+#bgr_data<- bgr_data %>% st_drop_geometry()
+# for reproducibility
+#set.seed(456)
+
+# train GBM model
+#gbm.fit <- gbm(
+#  formula = mpd.obs.z ~ .,
+#  distribution = "gaussian",
+#  data = bgr_data,
+#  n.trees = 10000,
+#  interaction.depth = 1,
+#  shrinkage = 0.001,
+#  cv.folds = 5,
+#  n.cores = NULL, # will use all cores by default
+#  verbose = FALSE
+#  ) 
+
+# get MSE (mean square error)
+#sqrt(min(gbm.fit$cv.error))
+## [1] 0.4902824 the model is off by ~.5 units of mpd.z
+
+# plot loss function as a result of n trees added to the ensemble
+#gbm.perf(gbm.fit, method = "cv")
+
+# train GBM model
+#gbm.fit2 <- gbm(
+#  formula = mpd.obs.z ~ .,
+#  distribution = "gaussian",
+#  data = bgr_data,
+#  n.trees = 5000,
+#  interaction.depth = 3, #increase the depth of each tree
+#  shrinkage = 0.1,       #increase the learning rate to take larger steps down the gradient descent
+#  cv.folds = 5,
+#  n.cores = NULL,
+#  verbose = FALSE
+#  )
+
+#save the model for easy use
+#saveRDS(gbm.fit2, "gbm.fit2.rds")
+gbm.fit2<-readRDS("gbm.fit2.rds")
+
+# find index for n trees with minimum CV error
+min_MSE <- which.min(gbm.fit2$cv.error)
+
+# get MSE and compute RMSE (root mean square error)
+sqrt(gbm.fit2$cv.error[min_MSE])
+## [1] 0.08042574   this is a great fit
+
+# plot loss function as a result of n trees added to the ensemble
+gbm.perf(gbm.fit2, method = "cv")
+
+#visualize variable importance
+par(mar = c(5, 8, 1, 1))
+summary(
+  gbm.fit2, 
+  cBars = 6, #the number of variables to show (in order of influence)
+  method = relative.influence, # variables with the largest average decrease in MSE are considered most important (also can use permutation.test.gbm)
+  las = 2
+  )
+
+#predicting using the best model
+
+# predict values for test data
+pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_data)
+# results
+caret::RMSE(pred, bgr_data$mpd.obs.z) #0.040  good model
+```
+
+#How well do the boosted regession model predictions match the data?
+```{r plot_bgr_predictions, echo = TRUE}
+#add predictions to data frame
+bgr_data$prediction<-pred
+
+ggplot(bgr_data)+
+  geom_line(aes(y = mpd.obs.z, x = leafshape))+
+  geom_line(aes(y =prediction, x = leafshape), color = "red")
+
+
+plot(prediction ~ leafshape + ntaxa + lat, bgr_data, pch = 19, col = "red")
+plot(mpd.obs.z ~ leafshape + ntaxa + lat, bgr_data)
+```

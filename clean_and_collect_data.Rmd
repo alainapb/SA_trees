@@ -1,0 +1,430 @@
+---
+title: "Clean and collect Southern Africa tree data"
+author: "APB"
+date: "4/8/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(sf)
+library(caper)
+library(picante)
+library(raster)
+library(scico)
+library(spdep)
+library(gbm)
+library(caret)
+```
+
+```{r load_data, include = FALSE}
+tree<-read.nexus("data/36runs_BI250000_12K_output.tre")
+#plot(tree, cex = 0.03) #1852 tips
+data<-read.csv("data/SA_tree_data.csv", header = TRUE)
+
+summary(data)
+```
+
+```{r clean_data, include =FALSE}
+#first pull Family name out of the tree tip labels
+tree$tip.label<-gsub("^.*?_","", tree$tip.label)
+
+#check similarity between tree tips and data
+tree_data<-data[which(data$matrix_name %in% tree$tip.label),]
+tree_data$height<-as.numeric(tree_data$height)
+tree_data$length<-as.numeric(tree_data$length)
+tree_data$width<-as.numeric(tree_data$width)
+tree_data$leaf_area<-as.numeric(tree_data$leaf_area)
+summary(tree_data)
+
+#remove any blanks from map_name
+filter(tree_data, map_name != "")->tree_data
+
+length(unique(tree_data$map_name)) #there is data for 1085 map_names from the tree 
+
+#subset the tree to only include taxa there is data for 
+SA_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% tree_data$matrix_name))])
+#plot(SA_tree, cex = 0.3, type = "f")
+```
+
+```{r calculate PD, include = FALSE}
+#interspecific distance matrix
+distance_matrix<-cophenetic.phylo(SA_tree)
+```
+
+#Looking at the data 
+```{r pgls, echo = TRUE, eval = FALSE}
+#make dataframe with species name in tree tip order and traits of interest
+dat<-data.frame(taxa=SA_tree$tip.label,
+                height=tree_data$height, 
+                leaf_shape=tree_data$ratio)
+#make a comparative data frame required for pgls
+cdat<-comparative.data(data = dat, phy = SA_tree, names.col="taxa")
+
+#Is tree height predicted by leaf shape?
+summary(pgls(log(height*1000) ~ leaf_shape, cdat, lambda = "ML")) #leaf shape predicts height ***; lambda = 0.267
+#Is there phylogenetic signal in tree height?
+summary(pgls(log(height*1000) ~ 1, cdat, lambda = "ML")) #lambda = 0.322
+#Is there phylogenetic signal in leaf shape?
+summary(pgls(leaf_shape ~ 1, cdat, lambda = "ML")) #lambda = 0.75
+
+
+#subset the data to remove 'Exotic' species and NAs
+tree_data %>%
+  filter(height != "Exotic") %>%
+  filter(height != "NA") %>% 
+  filter(ratio != "NA")-> l
+
+#with increasing tree height there are more round leaves
+summary(lm(log(height * 1000) ~ ratio, data = l)) # significant negative correlation\
+cor.test(log(l$height * 1000), l$ratio) # significant negative correlation r = -0.14
+
+#visual the relationship between tree height and leaf shape
+ggplot(l, mapping = aes(x=log(height*1000), y = ratio))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  labs(y = "Leaf shape (l/w)", x = "Tree height (mm)")+
+  theme_classic()
+```
+
+```{r load_shape_files, include = FALSE}
+#See some info on plotting shape files here:
+#https://r-spatial.github.io/sf/articles/sf5.html
+SA_poly<-st_read("data/GIS_DATA/all_no_exotics.shp")
+plot(st_geometry(SA_poly)) #Contains 1176 polygons
+
+SA_grids<-st_read("data/GIS_DATA/SA_grid.shp")
+plot(st_geometry(SA_grids))
+
+z<-subset(SA_poly, SA_poly$shpname=="acacia_karroo.shp")
+plot(st_geometry(SA_grids))
+plot(st_geometry(z), col = "lightblue", add = T) #add = T is adding the polygon for z to the previous plot
+
+# outline of countries in Southern Africa
+use<-map_data("world", region = c("Angola","Botswana","Lesotho","Mozambique","Malawi:3","Namibia", "Swaziland", "South Africa", "Zambia","Zimbabwe")) %>%
+  dplyr::select(lon = long, lat = lat, group, id= region)
+
+#remove island
+use<-filter(use, lat > -40)
+#remove extra countries 
+use<-filter(use, lat < -15)
+
+ggplot(use) +
+  geom_polygon(mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)
+```
+#TO DO
+## 1) overlay the grid and generate a simple species richness map
+## 2) extract the list of species overlapping each grid cell and then calculate PD for each cell. 
+## 3) map the median species trait values for each cell
+
+###Notes: One way of doing all this is by ‘rasterising’ each species polygon, and then stacking them. Assign a ‘trait value’ to each raster (for species richness this would just be ‘1’), and then sum the values or take their mean etc. Some hints here: https://luisdva.github.io/rstats/richness/
+
+#Species Richness Map
+```{r, species_richness_map, echo = TRUE}
+#QDS is quarter degree square grids
+st_crs(SA_grids)<-4326
+st_crs(SA_poly)
+st_crs(SA_grids)
+
+sf_use_s2(FALSE) # fixes the error with spherical geometry 
+
+richness_grid <- SA_grids %>%
+  st_join(SA_poly) %>%
+  mutate(overlap = ifelse(!is.na(shpname), 1, 0)) %>% #1 if there is a shpname
+  group_by(lat, long) %>%
+  summarize(num_species = sum(overlap), 
+            sp_names = list(shpname)) %>%
+  mutate(ID = paste(lat, "_", long))
+
+
+ggplot(richness_grid) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.1) +
+  geom_sf(aes(fill = num_species), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Species richness") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)+
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+  ) + labs(fill = "richness")
+```
+
+#Calculate PD for each grid cell (ID)
+```{r list_of_species_in_each_grid_cell, include = FALSE}
+#### ses.mpd from 'picante'
+#need a community matrix where ID are the rows and species names are the columns
+comm_matrix<-data.frame(matrix(ncol= length(tree$tip.label)), nrow=unique(richness_grid$ID), row.names = unique(richness_grid$ID))
+rownames(comm_matrix)<-unique(richness_grid$ID)
+tree_names<-tree_data[match(tree$tip.label, tree_data$matrix_name, nomatch = NA),] #put tree_data in tree tip.label order so we can easily switch between map_name and matrix_name
+tree_names<-subset(tree_names, map_name != "NA")
+colnames(comm_matrix)<-tree_names$map_name #set column names to the map names to make the for loop simpler
+
+for (i in 1:nrow(comm_matrix)){
+ comm_matrix[i,] <- colnames(comm_matrix) %in% unlist(subset(richness_grid, ID == rownames(comm_matrix)[i])$sp_names) %>% as.numeric
+
+}
+
+str(comm_matrix)
+k<-as.numeric(comm_matrix['-34.75 _ 19.75',]) # should have a sum of 101
+sum(k) # it does!
+
+#make column names match the tree tip labels 
+colnames(comm_matrix)<-tree_names$matrix_name
+
+#matrix has extra columns that are unnecessary
+comm_matrix<-comm_matrix[,1:1085]
+
+##code takes time to run
+#ses_results <-ses.mpd(comm_matrix, distance_matrix, null.model = "taxa.labels", runs = 1000) #30 minutes
+##save output as RDS
+#saveRDS(ses_results, "NRI_data.rds")
+##read in ses.mpd results
+NRI<-readRDS("NRI_data.rds") 
+NRI$ID<-rownames(NRI)
+
+#species are more clustered than we would expect
+plot(NRI$mpd.obs.z)
+abline(h=0)
+```
+
+#Map the mpd values for each cell
+```{r mpd_plot, echo = TRUE}
+right_join(richness_grid, NRI, by = "ID")->mpd_grid
+
+ggplot(mpd_grid) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = mpd.obs), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "MPD") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+    ) + labs(fill = "MPD")
+
+ggplot(mpd_grid) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = mpd.obs.z), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "SES") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+    ) + labs(fill = "SES (more or less phylogenetically clustered than expected")
+
+ggplot(mpd_grid) +
+  #geom_sf(data = SA_poly, fill = "white", color = "grey", size = 0.05) +
+  geom_sf(data = SA_grids, fill = "white", color = "black", size = 0.4) +
+  geom_sf(aes(fill = mpd.obs.p), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "quantiles of SES") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(
+    #plot.background = element_rect(fill = "#f1f2f3"),
+    #panel.background = element_rect(fill = "#2F4051"),
+    #panel.grid = element_blank(),
+    legend.position = "bottom",
+    #line = element_blank(),
+    #rect = element_blank()
+    ) + labs(fill = "quantiles of SES (> 0.95 indicates phylogenetic evenness)")
+# high quantiles (mpd.obs.p > 0.95) indicate phylogenetic evenness, or a greater phylogenetic distance among co-occurring species than expected.
+```
+#Summarise tree traits for each grid cell 
+```{r pull_medians_for_trait_data, include = FALSE}
+#dataframe by ID that includes the median tree trait data for each ID 
+trait_data<-data.frame(ID = unique(richness_grid$ID), 
+                       count =NA, 
+                       treeheight = NA,
+                       leafshape = NA,
+                       leafarea = NA)
+
+for (i in 1:nrow(trait_data)) {
+  
+  subset(tree_names, comm_matrix[i, ] == 1) ->j
+  
+  j %>%
+   summarise(length(height)) %>% unlist() -> trait_data$count[i]
+  
+  j %>%
+   summarise(mean(height, na.rm = T)) %>% unlist() -> trait_data$treeheight[i]
+  
+  j %>%
+   summarise(mean(ratio, na.rm = T)) %>% unlist() -> trait_data$leafshape[i]
+   
+  j %>%
+    summarise(mean(leaf_area, na.rm = T)) %>% unlist() -> trait_data$leafarea[i]
+}
+
+```
+
+#Plot median tree traits per grid cell
+```{r tree_trait_plots, echo =TRUE}
+right_join(mpd_grid, trait_data, by = "ID")->trait_grid
+
+ggplot(trait_grid) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = log(treeheight *1000)), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Log (Tree Height in m)") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(legend.position = "bottom") + 
+  labs(fill = "Log (Tree Height in m)")
+
+ggplot(trait_grid) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = leafshape), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Leaf Shape") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(legend.position = "bottom") + 
+  labs(fill = "Leaf Shape")
+
+ggplot(trait_grid) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = leafarea), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Leaf Area") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(legend.position = "bottom") + 
+  labs(fill = "Leaf Area")
+
+```
+
+#Rerun JD's Stats
+```{r correlations_regressions, include = TRUE}
+#Is there a correlation between mpd and species richness? 0.33 ***
+cor.test(mpd_grid$mpd.obs, mpd_grid$ntaxa)
+cor.test(mpd_grid$mpd.obs.z, mpd_grid$ntaxa)
+
+#Does mpd capture functional diversity? ...yes 59%
+summary(lm(log(treeheight*1000) ~ mpd.obs * ntaxa, data =trait_grid))
+
+#Is there a correlation between height and leaf shape? YES, tall trees have rounder leaves
+cor.test(log(trait_grid$treeheight*1000), trait_grid$leafshape) # -0.75 ***
+
+#Is there a ccorrelation between height and leaf area? Yes, tall trees have leaves with larger areas
+cor.test(log(trait_grid$treeheight*1000), trait_grid$leafarea) #.817
+
+#Is tree height explained by mpd and leaf shape?   65%
+summary(lm(log(treeheight*1000) ~ mpd.obs + leafshape, data = trait_grid))
+
+#Is tree height explained by mpd and leaf area?   67%
+summary(lm(log(treeheight*1000) ~ mpd.obs + leafarea, data = trait_grid))
+```
+
+### need to pull AET data (and PET from some database) look for NPP net primary productivity data
+#Adding NPP and AET data
+```{r NPP_from_1996, include=FALSE, eval=FALSE}
+#### NPP (kg-C/m2/year) from https://sage.nelson.wisc.edu/data-and-models/atlas-of-the-biosphere/mapping-the-biosphere/ecosystems#/net-primary-productivity/  ####
+#Foley, J.A., I.C. Prentice, N. Ramankutty, S. Levis, D. Pollard, S. Sitch, and A. Haxeltine (1996) An Integrated Biosphere Model of Land Surface Processes, Terrestrial Carbon Balance and Vegetation Dynamics, Global Biogeochemical Cycles, 10, 603-628.
+NPP_UWM<-raster("data/NPP_AET_data/NPP/npp/dblbnd.adf") #raster file
+plot(NPP_UWM) 
+crs(NPP_UWM) <- CRS('+init=EPSG:4326') #trying to add coordinates to the file
+
+points<- extract(NPP_UWM, SA_grids)
+str(points)
+unlist(points)->b
+
+#make a new dataframe with the NPP data
+trait_npp_grid<-trait_grid
+trait_npp_grid$npp<-b  #1196 grids of data
+
+#plot the NPP data
+ggplot(trait_npp_grid) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = npp), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "NPP (kg-C/m2/year)") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(legend.position = "bottom")+ 
+    labs(fill = "NPP")
+
+#remove grids with NA for npp
+trait_npp_clean<-subset(trait_npp_grid, npp != "NA")
+```
+
+```{r NPP_data_from_2013, include =FALSE}
+##### Global Fire Emissions Database, Version 4.1 (GFEDv4) source: https://daac.ornl.gov/VEGETATION/guides/fire_emissions_v4_R1.html  ####
+#trying to visualize the data
+#library(terra)
+#f <- "~/Documents/UBC/SA_trees/NPP_AET_data/GFED4.1s_2013.hdf5"
+#s <- sds(f) #S4 
+#pull the data we want into a dataframe
+#smaller<-data.frame(c(NPP = s$NPP, lat = s$lat, long = s$lon, grid_cell_area =s$grid_cell_area))
+#subset the data to the lat and lon we are interested in
+#subset(smaller, lat < -14) -> evenless
+#subset(evenless, lon > 12) ->less
+#subset(less, lon <37) ->less2
+#subset(less2, lat > -35) -> less3
+
+#make it an sf
+#my.sf.point <- st_as_sf(x = less3, 
+#                        coords = c("lon", "lat"),
+#                        crs = "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+
+#st_join(trait_npp_grid, my.sf.point)->test1
+#saveRDS(test1, "trait_npp_data.rds")
+##read npp data
+trait_npp_data<-readRDS("trait_npp_data.rds") 
+
+ggplot(trait_npp_data) +
+  #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
+  geom_sf(aes(fill = NPP), color = NA) +
+  scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "NPP (g C/m2/month)") +
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  theme_bw()+
+  theme(legend.position = "bottom")+ 
+    labs(fill = "NPP")
+```
+
+```{r AET_data_from_MODIS, echo =TRUE}
+##### MODIS data for evapotranspiration  ####
+#modis1<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2012001_aid0001.tif")
+
+#m1<-extract(modis1, SA_grids) #extract data from raster
+#str(m1) #check structure, 1207 grids with 14400 data points each... 
+
+#saveRDS(m1, "AET_data.rds")
+##read in AET data
+AET<-readRDS("AET_data.rds") 
+
+
+
+```
+
+
+#Surface leaf area data 
+```{r source_for_SLA_data, include = FALSE}
+#Botanical Information and Ecology Network
+library(BIEN)
+#make tree data names match BIEN names
+species_names<-(gsub( "_", " ", tree_data$Scientific_name))
+#remove sub species identities
+sub("^(\\S*\\s+\\S+).*", "\\1", species_names)->species_names_clean
+#search BIEN for the species names
+BIEN_trait_species(species_names_clean) -> BIEN_data
+#pull out surface leaf area measurements
+subset(BIEN_data, trait_name == "leaf area per leaf dry mass")->SLA_data
+unique(SLA_data$scrubbed_species_binomial) #only 79 of the 1085 species 
+
+```
+
+#Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
+
+
+
