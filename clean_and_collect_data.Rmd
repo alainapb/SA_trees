@@ -42,11 +42,15 @@ summary(tree_data)
 #remove any blanks from map_name
 filter(tree_data, map_name != "")->tree_data
 
+saveRDS(tree_data, "tree_data.rds")
+
 length(unique(tree_data$map_name)) #there is data for 1085 map_names from the tree 
 
 #subset the tree to only include taxa there is data for 
 SA_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% tree_data$matrix_name))])
 #plot(SA_tree, cex = 0.3, type = "f")
+
+saveRDS(SA_tree, "SA_tree.rds")
 ```
 
 ```{r calculate PD, include = FALSE}
@@ -394,15 +398,27 @@ ggplot(trait_npp_data) +
 
 ```{r AET_data_from_MODIS, echo =TRUE}
 ##### MODIS data for evapotranspiration  ####
-#modis1<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2012001_aid0001.tif")
+#modis1<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2013001_aid0001.tif") #https://earlywarning.usgs.gov/docs/SSEBopETreadme.pdf
 
 #m1<-extract(modis1, SA_grids) #extract data from raster
 #str(m1) #check structure, 1207 grids with 14400 data points each... 
 
 #saveRDS(m1, "AET_data.rds")
 ##read in AET data
-AET<-readRDS("AET_data.rds") 
+AET<-readRDS("AET_data.rds") # units should be ET (mm)
 
+
+```
+
+References:
+1. Zhang, K., J.S. Kimball, R.R. Nemani, S.W. Running, Y. Hong, J.J. Gourley, and Z. Yu, 2015. Vegetation Greening and Climate Change Promote Multidecadal Rises of Global Land Evapotranspiration, Scientific Reports, 5, 15956; doi: 10.1038/srep15956.
+2. Zhang, K., J.S. Kimball, R.R. Nemani, and S.W. Running, 2010. A continuous satellite-derived global record of land surface evapotranspiration from 1983-2006. Water Resources Research doi:10.1029/2009WR008800.
+3. Zhang, K., J.S. Kimball, Q. Mu, L.A. Jones, S.J. Goetz and S.W. Running, 2009. Satellite based analysis of northern ET trends and associated changes in the regional water balance from 1983 to 2005. Journal of Hydrology 379, 92-110.
+```{r}
+#http://files.ntsg.umt.edu/data/ET_global_monthly/Global_8kmResolution/
+library(ncdf4)
+nc<-"~/Desktop/Global_Monthly_ET_2013.nc"
+et_raster<-brick(nc, varname = "monthly_ET")
 
 
 ```

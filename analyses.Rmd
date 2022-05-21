@@ -7,6 +7,11 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(geiger)
+library(phytools)
+library(nlme)
+library(caper)
 ```
 
 ```{r load_data}
@@ -16,30 +21,33 @@ trait_npp_data<-readRDS("trait_npp_data.rds")
 tree<-readRDS("SA_tree.rds")
 #trait data per tree tip
 tree_data<-readRDS("tree_data.rds")
+#put tree data in tree tip.label order
+tree_data_ordered<-tree_data[match(tree$tip.label, tree_data$matrix_name),]
 ```
 
 #Is there phylogenetic signal in tree traits?
 ```{r test_phylo_signal, echo = TRUE}
-#First method uses fitContinous in the package 'geiger'
-library(geiger)
-
 ##create named vectors for traits of interest
-height<-tree_data$height
-names(height)<-tree_data$matrix_name
-ratio<-tree_data$ratio
-names(ratio)<-tree_data$matrix_name
-leafarea<-tree_data$leaf_area
-names(leafarea)<-tree_data$matrix_name
+height<-tree_data_ordered$height
+names(height)<-tree_data_ordered$matrix_name
+ratio<-tree_data_ordered$ratio
+names(ratio)<-tree_data_ordered$matrix_name
+leafarea<-tree_data_ordered$leaf_area
+names(leafarea)<-tree_data_ordered$matrix_name
 
-##check for phylogenetic signal
-height_lambda<-fitContinuous(tree, height, model = "lambda")
-ratio_lambda<-fitContinuous(tree, ratio, model = "lambda")
-leafarea_lambda<-fitContinuous(tree, leafarea, model = "lambda")
+##check for phylogenetic signal using fitContinous in the package 'geiger'
+fitContinuous(tree, height, model = "lambda")     #0
+fitContinuous(tree, ratio, model = "lambda")       #0
+fitContinuous(tree, leafarea, model = "lambda") #0
 
+#Second method uses phylosig in the package phytools
+phylosig(tree, height, method = "lambda")   #0.848
+phylosig(tree, ratio, method = "lambda")    #0.818
+phylosig(tree, leafarea, method = "lambda") #0.684
 
-#Second method uses gls() comparing a null model to a model that includes the only the tree
+#Third method uses gls() from the 'nlme' package comparing a null model to a model that includes the only the tree
 ##remove NAs and exotics
-tree_data %>%
+tree_data_ordered %>%
   filter(height != "Exotic") %>%
   filter(height != "NA") %>% 
   filter(ratio != "NA")-> corr_data
@@ -48,24 +56,50 @@ corr_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% corr_data$m
 
 ##make height models
 height_null<-gls(height ~ 1, corr_data)
-height_tree<-gls(height ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.1
+height_tree<-gls(height ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.856
 ##compare models
-anova(height_null, height_tree) #model with phylogeny is better (p = 0.008)
+anova(height_null, height_tree) #model with phylogeny is better (p < 0.0001)
 
 ##make leaf shape models
 ratio_null<-gls(ratio ~ 1, corr_data)
-ratio_tree<-gls(ratio ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.763
+ratio_tree<-gls(ratio ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.8199
 ##compare models
 anova(ratio_null, ratio_tree) #model with phylogeny is better (p < 0.0001)
 
 ##make leaf area models
 leafarea_null<-gls(leaf_area ~ 1, corr_data)
-leafarea_tree<-gls(leaf_area ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.413
+leafarea_tree<-gls(leaf_area ~ 1, corr_data, correlation = corPagel(0.5, corr_tree)) # lambda = 0.687
 ##compare models
 anova(leafarea_null, leafarea_tree) #model with phylogeny is better (p < 0.0001)
-
 ```
+There is phylogenetic signal in tree height, leaf length:width, and leaf area. Are there correlations between these traits? Are there phylogenetic correlations between these traits? 
 
+```{r correlation, echo = TRUE}
+#Is there a correlation between tree height and leaf shape? 
+cor.test(corr_data$height,corr_data$ratio)
+summary(lm(height ~ ratio, corr_data))
+plot(lm(height ~ ratio, corr_data))
+
+#Is there a phylogenetic correlation? (pgls() from the caper package)
+## make a data frame
+dat<-data.frame(taxa=corr_tree$tip.label,
+                height=corr_data$height, 
+                leaf_shape=corr_data$ratio,
+                leaf_area=corr_data$leaf_area)
+##make a comparative data frame required for pgls
+cdat<-comparative.data(data = dat, phy = corr_tree, names.col="taxa")
+summary(pgls(height ~ leaf_area, cdat, lambda = "ML"))
+summary(gls(height ~ ratio, corr_data, correlation = corPagel(0.5, corr_tree)))
+
+#Is there a correlation between tree height and leaf area?
+cor.test(corr_data$height, corr_data$leaf_area) #No
+summary(lm(height ~ leaf_area, corr_data))
+plot(lm(height ~ leaf_area, corr_data))
+
+#Is there a phylogenetic correlation?
+summary(pgls(height ~ leaf_area, cdat, lambda = "ML"))
+summary(gls(height ~ leaf_area, corr_data, correlation = corPagel(0.5, corr_tree)))
+```
 
 
 #Grid level analyses
