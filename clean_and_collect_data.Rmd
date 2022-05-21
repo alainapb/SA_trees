@@ -60,21 +60,6 @@ distance_matrix<-cophenetic.phylo(SA_tree)
 
 #Looking at the data 
 ```{r pgls, echo = TRUE, eval = FALSE}
-#make dataframe with species name in tree tip order and traits of interest
-dat<-data.frame(taxa=SA_tree$tip.label,
-                height=tree_data$height, 
-                leaf_shape=tree_data$ratio)
-#make a comparative data frame required for pgls
-cdat<-comparative.data(data = dat, phy = SA_tree, names.col="taxa")
-
-#Is tree height predicted by leaf shape?
-summary(pgls(log(height*1000) ~ leaf_shape, cdat, lambda = "ML")) #leaf shape predicts height ***; lambda = 0.267
-#Is there phylogenetic signal in tree height?
-summary(pgls(log(height*1000) ~ 1, cdat, lambda = "ML")) #lambda = 0.322
-#Is there phylogenetic signal in leaf shape?
-summary(pgls(leaf_shape ~ 1, cdat, lambda = "ML")) #lambda = 0.75
-
-
 #subset the data to remove 'Exotic' species and NAs
 tree_data %>%
   filter(height != "Exotic") %>%
