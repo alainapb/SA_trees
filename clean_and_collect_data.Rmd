@@ -58,25 +58,6 @@ saveRDS(SA_tree, "SA_tree.rds")
 distance_matrix<-cophenetic.phylo(SA_tree)
 ```
 
-#Looking at the data 
-```{r pgls, echo = TRUE, eval = FALSE}
-#subset the data to remove 'Exotic' species and NAs
-tree_data %>%
-  filter(height != "Exotic") %>%
-  filter(height != "NA") %>% 
-  filter(ratio != "NA")-> l
-
-#with increasing tree height there are more round leaves
-summary(lm(log(height * 1000) ~ ratio, data = l)) # significant negative correlation\
-cor.test(log(l$height * 1000), l$ratio) # significant negative correlation r = -0.14
-
-#visual the relationship between tree height and leaf shape
-ggplot(l, mapping = aes(x=log(height*1000), y = ratio))+
-  geom_point()+
-  geom_smooth(method = "lm")+
-  labs(y = "Leaf shape (l/w)", x = "Tree height (mm)")+
-  theme_classic()
-```
 
 ```{r load_shape_files, include = FALSE}
 #See some info on plotting shape files here:
