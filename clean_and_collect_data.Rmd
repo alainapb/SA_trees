@@ -364,15 +364,28 @@ ggplot(trait_npp_data) +
 
 ```{r AET_data_from_MODIS, echo =TRUE}
 ##### MODIS data for evapotranspiration  ####
-#modis1<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2013001_aid0001.tif") #https://earlywarning.usgs.gov/docs/SSEBopETreadme.pdf
+modis1<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2013001_aid0001.tif") 
+plot(modis1)
+#kg/m2/8days 
 
-#m1<-extract(modis1, SA_grids) #extract data from raster
-#str(m1) #check structure, 1207 grids with 14400 data points each... 
+m1<-extract(modis1, SA_grids) #extract data from raster
+str(m1) #check structure, 1207 grids with 14400 data points each... 
 
 #saveRDS(m1, "AET_data.rds")
 ##read in AET data
-AET<-readRDS("AET_data.rds") # units should be ET (mm)
+AET<-readRDS("AET_data.rds") 
 
+mysummary <- data.frame(matrix(ncol=4,nrow=length(AET)))
+colnames(mysummary) <- c("mean","median","min","max")
+for(i in seq(length(AET))){
+  AET[[i]][AET[[i]] > 32700] <- NA
+  mysummary$mean[i] <- mean(AET[[i]], na.rm=T)
+  mysummary$median[i] <- median(AET[[i]], na.rm = T)
+  mysummary$max[i] <- max(AET[[i]], na.rm = T)
+  mysummary$min[i] <- min(AET[[i]], na.rm = T)
+}
+
+AET[[1]]
 
 ```
 
@@ -383,7 +396,7 @@ References:
 ```{r}
 #http://files.ntsg.umt.edu/data/ET_global_monthly/Global_8kmResolution/
 library(ncdf4)
-nc<-"~/Desktop/Global_Monthly_ET_2013.nc"
+nc<-"~/Documents/UBC/SA_trees/NPP_AET_data/Global_Monthly_ET_2013.nc"
 et_raster<-brick(nc, varname = "monthly_ET")
 
 

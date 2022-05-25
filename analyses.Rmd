@@ -111,19 +111,19 @@ plot(log(leaf_area) ~ log(ratio), corr_data)
 #Grid level analyses
 ```{r correlations, echo = TRUE}
 #Is there a correlation between leafshape and NPP? YES
-summary(lm(leafshape ~ NPP, data = trait_npp_data))
-cor.test(test1$leafshape, test1$NPP) #r = -0.578
-plot(leafshape ~ NPP, data = trait_npp_data) #rounder leaves in areas with higher NPP
+summary(lm(log(leafshape) ~ NPP, data = trait_npp_data))
+cor.test(log(trait_npp_data$leafshape), trait_npp_data$NPP) #r = -0.578
+plot(log(leafshape) ~ NPP, data = trait_npp_data) #rounder leaves in areas with higher NPP
 
 #Is there a correlation between leaf area and NPP? YES
-summary(lm(leafarea ~ NPP, data = trait_npp_data))
-cor.test(test1$leafarea, test1$NPP) #r = 0.55
-plot(leafarea ~ NPP, data = trait_npp_data) #leaves with larger surface areas in grids with higher NPP
+summary(lm(log(leafarea) ~ NPP, data = trait_npp_data))
+cor.test(log(trait_npp_data$leafarea), trait_npp_data$NPP) #r = 0.58
+plot(log(leafarea) ~ NPP, data = trait_npp_data) #leaves with larger surface areas in grids with higher NPP
 
 #Is there a correlation between tree height and species richness? YES
-summary(lm(log(treeheight*1000) ~ ntaxa, data = trait_npp_data)) 
-cor.test(log(trait_npp_data$treeheight*1000), trait_npp_data$ntaxa) #r = 0.712
-plot(log(treeheight*1000) ~ ntaxa, data = trait_npp_data) #taller trees in areas with more species 
+summary(lm(log(treeheight) ~ ntaxa, data = trait_npp_data)) 
+cor.test(log(trait_npp_data$treeheight), trait_npp_data$ntaxa) #r = 0.709
+plot(log(treeheight) ~ ntaxa, data = trait_npp_data) #taller trees in areas with more species 
 ```
 
 #Model of grid cells
@@ -133,7 +133,7 @@ moran's I on the residuals(autocorrelation in space)
 
 ```{r models, include = TRUE}
 #linear model predicting observed mpd 
-full_model_obs<-lm(mpd.obs ~ log(treeheight*1000) + leafshape + ntaxa + NPP, data = trait_npp_data)
+full_model_obs<-lm(mpd.obs ~ log(treeheight) + log(leafshape) + ntaxa + NPP, data = trait_npp_data)
 summary(full_model_obs)
 plot(full_model_obs)
 
@@ -141,7 +141,7 @@ plot(full_model_obs)
 plot(full_model_obs$residuals)
 
 #linear model predicting SES of mpd
-full_model_ses<-lm(mpd.obs.z ~ log(treeheight*1000) + log(leafshape) + ntaxa + NPP, data = trait_npp_data)
+full_model_ses<-lm(mpd.obs.z ~ log(treeheight) + log(leafshape) + ntaxa + NPP, data = trait_npp_data)
 summary(full_model_ses)
 plot(full_model_ses)
 
@@ -159,17 +159,17 @@ listw <- nb2listw(neighbours)
 #calculate Moran's I
 #observed mpd
 globalMoran_obs <- moran.test(full_model_obs$residuals, listw)
-globalMoran_obs #0.79  the residuals of the model are positively autocorrelated
+globalMoran_obs #0.78  the residuals of the model are positively autocorrelated
 #SES mpd
 globalMoran_ses <- moran.test(full_model_ses$residuals, listw)
-globalMoran_ses #0.83  the residuals of the model are positively autocorrelated
+globalMoran_ses #0.82  the residuals of the model are positively autocorrelated
 #plot the correlations
 moran.plot(full_model_obs$residuals, listw = nb2listw(neighbours, style = "W"))
 moran.plot(full_model_ses$residuals, listw = nb2listw(neighbours, style = "W"))
 
 
 ###
-model_lat<-lm(mpd.obs.z ~ log(treeheight*1000) + leafshape + ntaxa + NPP + lat + long, data = trait_npp_data)
+model_lat<-lm(mpd.obs.z ~ log(treeheight) + log(leafshape) + ntaxa + NPP + lat + long, data = trait_npp_data)
 summary(model_lat)
 plot(model_lat)
 
@@ -177,7 +177,7 @@ plot(model_lat$residuals)
 
 #calculate Moran's I
 latMoran<-moran.test(model_lat$residuals, listw)
-latMoran #still has a high spatial autocorrelation
+latMoran #still has a high spatial autocorrelation 0.73
 
 #plot the correlation
 moran.plot(model_lat$residuals, listw = nb2listw(neighbours, style = "W"))
@@ -191,8 +191,11 @@ need to plan a spatial model:
 #clean data
 #bgr_data<-trait_npp_data[,c(1,2,7,12,16,17,19)]
 #bgr_data<- bgr_data %>% st_drop_geometry()
+#bgr_data$log_treeheight<-log(bgr_data$treeheight) #log the height
+#bgr_data$log_leafshape<-log(bgr_data$leafshape) #log the leaf shape
+#bgr_data2<-bgr_data[,c(1,2,3,4,7,8,9)] # only include the traits for the model
 # for reproducibility
-#set.seed(456)
+set.seed(456)
 
 # train GBM model
 #gbm.fit <- gbm(
@@ -209,26 +212,26 @@ need to plan a spatial model:
 
 # get MSE (mean square error)
 #sqrt(min(gbm.fit$cv.error))
-## [1] 0.4902824 the model is off by ~.5 units of mpd.z
+## [1] 0.4720749 the model is off by ~.5 units of mpd.z
 
 # plot loss function as a result of n trees added to the ensemble
 #gbm.perf(gbm.fit, method = "cv")
 
 # train GBM model
-#gbm.fit2 <- gbm(
-#  formula = mpd.obs.z ~ .,
-#  distribution = "gaussian",
-#  data = bgr_data,
-#  n.trees = 5000,
-#  interaction.depth = 3, #increase the depth of each tree
-#  shrinkage = 0.1,       #increase the learning rate to take larger steps down the gradient descent
-#  cv.folds = 5,
-#  n.cores = NULL,
-#  verbose = FALSE
-#  )
+gbm.fit2 <- gbm(
+  formula = mpd.obs.z ~ .,
+  distribution = "gaussian",
+  data = bgr_data2,
+  n.trees = 5000,
+  interaction.depth = 3, #increase the depth of each tree
+  shrinkage = 0.1,       #increase the learning rate to take larger steps down the gradient descent
+  cv.folds = 5,
+  n.cores = NULL,
+  verbose = FALSE
+  )
 
 #save the model for easy use
-#saveRDS(gbm.fit2, "gbm.fit2.rds")
+saveRDS(gbm.fit2, "gbm.fit2.rds")
 gbm.fit2<-readRDS("gbm.fit2.rds")
 
 # find index for n trees with minimum CV error
@@ -236,7 +239,7 @@ min_MSE <- which.min(gbm.fit2$cv.error)
 
 # get MSE and compute RMSE (root mean square error)
 sqrt(gbm.fit2$cv.error[min_MSE])
-## [1] 0.08042574   this is a great fit
+## [1] 0.0754 this is a great fit
 
 # plot loss function as a result of n trees added to the ensemble
 gbm.perf(gbm.fit2, method = "cv")
@@ -253,21 +256,25 @@ summary(
 #predicting using the best model
 
 # predict values for test data
-pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_data)
+pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_data2)
 # results
-caret::RMSE(pred, bgr_data$mpd.obs.z) #0.040  good model
+caret::RMSE(pred, bgr_data2$mpd.obs.z) #0.035  good model
 ```
 
 #How well do the boosted regession model predictions match the data?
 ```{r plot_bgr_predictions, echo = TRUE}
 #add predictions to data frame
-bgr_data$prediction<-pred
+bgr_data2$prediction<-pred
 
-ggplot(bgr_data)+
-  geom_line(aes(y = mpd.obs.z, x = leafshape))+
-  geom_line(aes(y =prediction, x = leafshape), color = "red")
+ggplot(bgr_data2)+
+  geom_line(aes(y = mpd.obs.z, x = log_leafshape))+
+  geom_line(aes(y =prediction, x = log_leafshape), color = "red")
 
 
-plot(prediction ~ leafshape + ntaxa + lat, bgr_data, pch = 19, col = "red")
-plot(mpd.obs.z ~ leafshape + ntaxa + lat, bgr_data)
+plot(prediction ~ log_leafshape, bgr_data2, pch = 19, col = "red")
+abline(h=0)
+
+plot(prediction ~ log_treeheight, bgr_data2, pch = 19, col = "red")
+abline(h=0)
+
 ```
