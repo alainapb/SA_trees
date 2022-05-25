@@ -76,8 +76,21 @@ leafarea_tree<-gls(log(leaf_area) ~ 1, corr_data, correlation = corPagel(0.5, co
 ##compare models
 anova(leafarea_null, leafarea_tree) #model with phylogeny is better (p < 0.0001)
 ```
-There is phylogenetic signal in tree height, leaf length:width, and leaf area. Are there correlations between these traits? Are there phylogenetic correlations between these traits? 
+There is phylogenetic signal in tree height, leaf length:width, and leaf area. What does it look like?
+```{r plot_traits, echo = FALSE}
+height_values<-log(corr_data$height)
+names(height_values)<-corr_tree$tip.label
+contMap(corr_tree,height_values, fsize = 0.2, lwd = 0.4, type= "fan")
 
+shape_values<-log(corr_data$ratio)
+names(shape_values)<-corr_tree$tip.label
+contMap(corr_tree, shape_values, fsize = 0.2, lwd = 0.4, type= "fan") #odd, there are negative values... 
+
+```
+
+
+
+Are there correlations between these traits? Are there phylogenetic correlations between these traits? 
 ```{r correlation, echo = TRUE}
 #Is there a correlation between tree height and leaf shape? 
 cor.test(log(corr_data$height),log(corr_data$ratio)) # yes -.15
