@@ -108,21 +108,23 @@ richness_grid <- SA_grids %>%
             sp_names = list(shpname)) %>%
   mutate(ID = paste(lat, "_", long))
 
+#dark grey/blue #2F4051
 
-ggplot(richness_grid) +
+richness<-ggplot(richness_grid) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.1) +
   geom_sf(aes(fill = num_species), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Species richness") +
   geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)+
-  theme_bw()+
+  theme_classic()+
   theme(
-    #plot.background = element_rect(fill = "#f1f2f3"),
-    #panel.background = element_rect(fill = "#2F4051"),
-    #panel.grid = element_blank(),
+    #plot.background = element_rect(fill = "white"),
+    #panel.background = element_rect(fill = "white"),
+    panel.grid = element_blank(),
     legend.position = "bottom",
-    #line = element_blank(),
-    #rect = element_blank()
-  ) + labs(fill = "richness")
+    rect = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
 ```
 
 #Calculate PD for each grid cell (ID)
@@ -158,51 +160,59 @@ comm_matrix<-comm_matrix[,1:1085]
 NRI<-readRDS("NRI_data.rds") 
 NRI$ID<-rownames(NRI)
 
+#median
+median(NRI$mpd.obs.z)
+
+#24 grids have more dispersed species than we would expect by chance
+dispersed<- subset(NRI, mpd.obs.z > 0) 
+#1183 grids are clustered
+clustered<-subset(NRI, mpd.obs.z < 0)
+
 #species are more clustered than we would expect
 plot(NRI$mpd.obs.z)
 abline(h=0)
+abline(h = -2.35, lty =2, col = "red") # median SES
 ```
 
 #Map the mpd values for each cell
 ```{r mpd_plot, echo = TRUE}
 right_join(richness_grid, NRI, by = "ID")->mpd_grid
 
-ggplot(mpd_grid) +
+#MPD map
+MPD_plot<-ggplot(mpd_grid) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = mpd.obs), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "MPD") +
-  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
-  theme_bw()+
-  theme(
-    #plot.background = element_rect(fill = "#f1f2f3"),
-    #panel.background = element_rect(fill = "#2F4051"),
-    #panel.grid = element_blank(),
-    legend.position = "bottom",
-    #line = element_blank(),
-    #rect = element_blank()
-    ) + labs(fill = "MPD")
+  geom_polygon(use, mapping=aes(lon, lat, group = group), 
+               fill = "transparent", 
+               colour = "black", 
+               size = 0.5)+
+  theme_classic()+
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    rect = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank())
 
-ggplot(mpd_grid) +
+# SES map (more or less phylogenetically clustered than expected)
+SESplot<-ggplot(mpd_grid) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = mpd.obs.z), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "SES") +
-  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
-  theme_bw()+
-  theme(
-    #plot.background = element_rect(fill = "#f1f2f3"),
-    #panel.background = element_rect(fill = "#2F4051"),
-    #panel.grid = element_blank(),
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)+
+  theme_classic()+
+  theme(panel.grid = element_blank(),
     legend.position = "bottom",
-    #line = element_blank(),
-    #rect = element_blank()
-    ) + labs(fill = "SES (more or less phylogenetically clustered than expected")
+    rect = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank())
 
 ggplot(mpd_grid) +
   #geom_sf(data = SA_poly, fill = "white", color = "grey", size = 0.05) +
   geom_sf(data = SA_grids, fill = "white", color = "black", size = 0.4) +
   geom_sf(aes(fill = mpd.obs.p), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "quantiles of SES") +
-  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.4)+
   theme_bw()+
   theme(
     #plot.background = element_rect(fill = "#f1f2f3"),
@@ -246,29 +256,35 @@ for (i in 1:nrow(trait_data)) {
 ```{r tree_trait_plots, echo =TRUE}
 right_join(mpd_grid, trait_data, by = "ID")->trait_grid
 
-ggplot(trait_grid) +
+height_plot<-ggplot(trait_grid) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = log(treeheight *1000)), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Log (Tree Height in m)") +
-  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
-  theme_bw()+
-  theme(legend.position = "bottom") + 
-  labs(fill = "Log (Tree Height in m)")
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)+
+  theme_classic()+
+  theme(panel.grid = element_blank(),
+    legend.position = "bottom",
+    rect = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank())
 
-ggplot(trait_grid) +
+shape_plot<-ggplot(trait_grid) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = leafshape), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Leaf Shape") +
-  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
-  theme_bw()+
-  theme(legend.position = "bottom") + 
-  labs(fill = "Leaf Shape")
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)+
+ theme_classic()+
+theme(panel.grid = element_blank(),
+    legend.position = "bottom",
+    rect = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank())
 
 ggplot(trait_grid) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = leafarea), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "Leaf Area") +
-  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)+
   theme_bw()+
   theme(legend.position = "bottom") + 
   labs(fill = "Leaf Area")
@@ -331,7 +347,7 @@ trait_npp_clean<-subset(trait_npp_grid, npp != "NA")
 ```{r NPP_data_from_2013, include =FALSE}
 ##### Global Fire Emissions Database, Version 4.1 (GFEDv4) source: https://daac.ornl.gov/VEGETATION/guides/fire_emissions_v4_R1.html  ####
 #trying to visualize the data
-#library(terra)
+library(terra)
 #f <- "~/Documents/UBC/SA_trees/NPP_AET_data/GFED4.1s_2013.hdf5"
 #s <- sds(f) #S4 
 #pull the data we want into a dataframe
@@ -352,71 +368,28 @@ trait_npp_clean<-subset(trait_npp_grid, npp != "NA")
 ##read npp data
 trait_npp_data<-readRDS("trait_npp_data.rds") 
 
-ggplot(trait_npp_data) +
+npp_plot<-ggplot(trait_npp_data) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
   geom_sf(aes(fill = NPP), color = NA) +
   scale_fill_scico(palette = "davos", direction = -1, end = 0.9, name = "NPP (g C/m2/month)") +
-  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.3)+
-  theme_bw()+
-  theme(legend.position = "bottom")+ 
-    labs(fill = "NPP")
-```
-
-```{r AET_data_from_MODIS, echo =TRUE}
-##### MODIS data for evapotranspiration  ####
-modis1<-raster("data/NPP_AET_data/MODIS/MOD16A2.006_ET_500m_doy2013001_aid0001.tif") 
-plot(modis1)
-#kg/m2/8days 
-
-m1<-extract(modis1, SA_grids) #extract data from raster
-str(m1) #check structure, 1207 grids with 14400 data points each... 
-
-#saveRDS(m1, "AET_data.rds")
-##read in AET data
-AET<-readRDS("AET_data.rds") 
-
-mysummary <- data.frame(matrix(ncol=4,nrow=length(AET)))
-colnames(mysummary) <- c("mean","median","min","max")
-for(i in seq(length(AET))){
-  AET[[i]][AET[[i]] > 32700] <- NA
-  mysummary$mean[i] <- mean(AET[[i]], na.rm=T)
-  mysummary$median[i] <- median(AET[[i]], na.rm = T)
-  mysummary$max[i] <- max(AET[[i]], na.rm = T)
-  mysummary$min[i] <- min(AET[[i]], na.rm = T)
-}
-
-AET[[1]]
-
-```
-
-References:
-1. Zhang, K., J.S. Kimball, R.R. Nemani, S.W. Running, Y. Hong, J.J. Gourley, and Z. Yu, 2015. Vegetation Greening and Climate Change Promote Multidecadal Rises of Global Land Evapotranspiration, Scientific Reports, 5, 15956; doi: 10.1038/srep15956.
-2. Zhang, K., J.S. Kimball, R.R. Nemani, and S.W. Running, 2010. A continuous satellite-derived global record of land surface evapotranspiration from 1983-2006. Water Resources Research doi:10.1029/2009WR008800.
-3. Zhang, K., J.S. Kimball, Q. Mu, L.A. Jones, S.J. Goetz and S.W. Running, 2009. Satellite based analysis of northern ET trends and associated changes in the regional water balance from 1983 to 2005. Journal of Hydrology 379, 92-110.
-```{r}
-#http://files.ntsg.umt.edu/data/ET_global_monthly/Global_8kmResolution/
-library(ncdf4)
-nc<-"~/Documents/UBC/SA_trees/NPP_AET_data/Global_Monthly_ET_2013.nc"
-et_raster<-brick(nc, varname = "monthly_ET")
-
+  geom_polygon(use, mapping=aes(lon, lat, group = group), fill = "transparent", colour = "black", size = 0.5)+
+theme_classic()+
+theme(panel.grid = element_blank(),
+    legend.position = "bottom",
+    rect = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank())
 
 ```
 
 
-#Surface leaf area data 
-```{r source_for_SLA_data, include = FALSE}
-#Botanical Information and Ecology Network
-library(BIEN)
-#make tree data names match BIEN names
-species_names<-(gsub( "_", " ", tree_data$Scientific_name))
-#remove sub species identities
-sub("^(\\S*\\s+\\S+).*", "\\1", species_names)->species_names_clean
-#search BIEN for the species names
-BIEN_trait_species(species_names_clean) -> BIEN_data
-#pull out surface leaf area measurements
-subset(BIEN_data, trait_name == "leaf area per leaf dry mass")->SLA_data
-unique(SLA_data$scrubbed_species_binomial) #only 79 of the 1085 species 
+All the figures together
+```{r figure1, echo=FALSE}
+all<-SESplot + npp_plot + richness + shape_plot + height_plot +  plot_layout(ncol = 3)
 
+all  + plot_annotation(tag_levels = 'A')
+
+ggsave("figure1.png", height = 6, width = 12)
 ```
 
 #Check the ecotone region in the cape, it may explain why there is low species richness and high mpd

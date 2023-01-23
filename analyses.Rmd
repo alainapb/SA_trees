@@ -6,13 +6,21 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(geiger)
 library(phytools)
 library(nlme)
 library(caper)
 library(gbm)
+library(ggplot2)
+library(sf)
+library(picante)
+library(raster)
+library(scico)
+library(spdep)
+library(gbm)
+library(caret)
 ```
 
 ```{r load_data}
@@ -76,6 +84,7 @@ leafarea_tree<-gls(log(leaf_area) ~ 1, corr_data, correlation = corPagel(0.5, co
 ##compare models
 anova(leafarea_null, leafarea_tree) #model with phylogeny is better (p < 0.0001)
 ```
+
 There is phylogenetic signal in tree height, leaf length:width, and leaf area. What does it look like?
 ```{r plot_traits, echo = FALSE}
 height_values<-log(corr_data$height)
@@ -84,10 +93,8 @@ contMap(corr_tree,height_values, fsize = 0.2, lwd = 0.4, type= "fan")
 
 shape_values<-log(corr_data$ratio)
 names(shape_values)<-corr_tree$tip.label
-contMap(corr_tree, shape_values, fsize = 0.2, lwd = 0.4, type= "fan") #odd, there are negative values... 
-
+contMap(corr_tree, shape_values, fsize = 0.2, lwd = 0.4, type= "fan") 
 ```
-
 
 
 Are there correlations between these traits? Are there phylogenetic correlations between these traits? 
@@ -95,6 +102,11 @@ Are there correlations between these traits? Are there phylogenetic correlations
 #Is there a correlation between tree height and leaf shape? 
 cor.test(log(corr_data$height),log(corr_data$ratio)) # yes -.15
 summary(lm(log(height) ~ log(ratio), corr_data))
+
+ggplot(corr_data, mapping=aes(x= log(ratio), y = log(height)))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  theme_classic()
 
 #Is there a phylogenetic correlation? (pgls() from the caper package)
 ## make a data frame
@@ -104,8 +116,10 @@ dat<-data.frame(taxa=corr_tree$tip.label,
                 log_leaf_area=log(corr_data$leaf_area))
 ##make a comparative data frame required for pgls
 cdat<-comparative.data(data = dat, phy = corr_tree, names.col="taxa")
-summary(pgls(log_height ~ log_leaf_shape, cdat, lambda = "ML")) #NO
-summary(gls(log(height) ~ log(ratio), corr_data, correlation = corPagel(0.5, corr_tree)))
+
+#Is there a phylogenetic correlation between tree height and leaf shape? 
+summary(pgls(log_height ~ log_leaf_shape, cdat, lambda = "ML")) #NO multiple R2 = 0.00082
+summary(tree_height_gls<-gls(log(height) ~ log(ratio), corr_data, correlation = corPagel(0.5, corr_tree))) # r = -0.108, p = 0.348
 
 #Is there a correlation between tree height and leaf area?
 cor.test(log(corr_data$height), log(corr_data$leaf_area)) #Yes 0.268
@@ -123,7 +137,7 @@ plot(log(leaf_area) ~ log(ratio), corr_data)
 
 #Grid level analyses
 ```{r correlations, echo = TRUE}
-#Is there a correlation between leafshape and NPP? YES
+#Is there a correlation between leaf shape and NPP? YES
 summary(lm(log(leafshape) ~ NPP, data = trait_npp_data))
 cor.test(log(trait_npp_data$leafshape), trait_npp_data$NPP) #r = -0.578
 plot(log(leafshape) ~ NPP, data = trait_npp_data) #rounder leaves in areas with higher NPP
@@ -134,10 +148,12 @@ cor.test(log(trait_npp_data$leafarea), trait_npp_data$NPP) #r = 0.58
 plot(log(leafarea) ~ NPP, data = trait_npp_data) #leaves with larger surface areas in grids with higher NPP
 
 #Is there a correlation between tree height and species richness? YES
-summary(lm(log(treeheight) ~ ntaxa, data = trait_npp_data)) 
-cor.test(log(trait_npp_data$treeheight), trait_npp_data$ntaxa) #r = 0.709
-plot(log(treeheight) ~ ntaxa, data = trait_npp_data) #taller trees in areas with more species 
+summary(lm(log(treeheight) ~ log(ntaxa), data = trait_npp_data)) 
+cor.test(log(trait_npp_data$treeheight), log(trait_npp_data$ntaxa)) #r = 0.821
+plot(log(treeheight) ~ log(ntaxa), data = trait_npp_data) #taller trees in areas with more species 
+
 ```
+
 
 #Model of grid cells
 mpd is the response for the outcomes of the mayfield and levine 2010
@@ -146,7 +162,7 @@ moran's I on the residuals(autocorrelation in space)
 
 ```{r models, include = TRUE}
 #linear model predicting observed mpd 
-full_model_obs<-lm(mpd.obs ~ log(treeheight) + log(leafshape) + ntaxa + NPP, data = trait_npp_data)
+full_model_obs<-lm(mpd.obs ~ log(treeheight) + log(leafshape) + log(ntaxa) + NPP, data = trait_npp_data)
 summary(full_model_obs)
 plot(full_model_obs)
 
@@ -154,7 +170,7 @@ plot(full_model_obs)
 plot(full_model_obs$residuals)
 
 #linear model predicting SES of mpd
-full_model_ses<-lm(mpd.obs.z ~ log(treeheight) + log(leafshape) + ntaxa + NPP, data = trait_npp_data)
+full_model_ses<-lm(mpd.obs.z ~ log(treeheight) + log(leafshape) + log(ntaxa) + NPP, data = trait_npp_data)
 summary(full_model_ses)
 plot(full_model_ses)
 
@@ -172,21 +188,24 @@ listw <- nb2listw(neighbours)
 #calculate Moran's I
 #observed mpd
 globalMoran_obs <- moran.test(full_model_obs$residuals, listw)
-globalMoran_obs #0.78  the residuals of the model are positively autocorrelated
+globalMoran_obs #0.73  the residuals of the model are positively autocorrelated
 #SES mpd
 globalMoran_ses <- moran.test(full_model_ses$residuals, listw)
-globalMoran_ses #0.82  the residuals of the model are positively autocorrelated
+globalMoran_ses #0.84  the residuals of the model are positively autocorrelated
 #plot the correlations
 moran.plot(full_model_obs$residuals, listw = nb2listw(neighbours, style = "W"))
 moran.plot(full_model_ses$residuals, listw = nb2listw(neighbours, style = "W"))
 
 
 ###
-model_lat<-lm(mpd.obs.z ~ log(treeheight) + log(leafshape) + ntaxa + NPP + lat + long, data = trait_npp_data)
+model_lat<-lm(mpd.obs.z ~ log(treeheight) + log(leafshape) + log(ntaxa) + NPP + lat + long, data = trait_npp_data)
 summary(model_lat)
 plot(model_lat)
 
 plot(model_lat$residuals)
+
+#check for collinearity
+car::vif(model_lat)
 
 #calculate Moran's I
 latMoran<-moran.test(model_lat$residuals, listw)
@@ -195,46 +214,56 @@ latMoran #still has a high spatial autocorrelation 0.73
 #plot the correlation
 moran.plot(model_lat$residuals, listw = nb2listw(neighbours, style = "W"))
 ```
-need to plan a spatial model: 
- 1) include lat and long
- 2) spatial eigenvectors 
+
  
 #boosted regression model (mpd ~ everything) 
 ```{r boosted_regression, echo =TRUE}
 #clean data
-#bgr_data<-trait_npp_data[,c(1,2,7,12,16,17,19)]
-#bgr_data<- bgr_data %>% st_drop_geometry()
-#bgr_data$log_treeheight<-log(bgr_data$treeheight) #log the height
-#bgr_data$log_leafshape<-log(bgr_data$leafshape) #log the leaf shape
-#bgr_data2<-bgr_data[,c(1,2,3,4,7,8,9)] # only include the traits for the model
+bgr_data<-trait_npp_data[,c(1,2,7,12,16,17,19)]
+bgr_data<- bgr_data %>% st_drop_geometry()
+bgr_data$log_treeheight<-log(bgr_data$treeheight) #log the height
+bgr_data$log_leafshape<-log(bgr_data$leafshape) #log the leaf shape
+bgr_data$log_ntaxa<-log(bgr_data$ntaxa) #log the species richness
+bgr_data2<-bgr_data[,c(1,2,4,7,8,9,10)] # only include the traits for the model
+
+#save dataframe
+saveRDS(bgr_data2, "bgr_data2.rds")
+
 # for reproducibility
 set.seed(456)
+#create training (70%) and test (30%) datasets 
+library(rsample)
+d_split<-initial_split(bgr_data2, prop = .7)
+bgr_train<-training(d_split)
+bgr_test<-testing(d_split)
+
 
 # train GBM model
-#gbm.fit <- gbm(
-#  formula = mpd.obs.z ~ .,
-#  distribution = "gaussian",
-#  data = bgr_data,
-#  n.trees = 10000,
-#  interaction.depth = 1,
-#  shrinkage = 0.001,
-#  cv.folds = 5,
-#  n.cores = NULL, # will use all cores by default
-#  verbose = FALSE
-#  ) 
+gbm.fit <- gbm(
+  formula = mpd.obs.z ~ .,
+  distribution = "gaussian",
+  data = bgr_train,
+  n.trees = 10000,
+  interaction.depth = 1,
+  shrinkage = 0.001,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+  ) 
 
+print(gbm.fit)
 # get MSE (mean square error)
-#sqrt(min(gbm.fit$cv.error))
-## [1] 0.4720749 the model is off by ~.5 units of mpd.z
+sqrt(min(gbm.fit$cv.error))
+## [1] 0.4695194 the model is off by ~.5 units of mpd.z
 
 # plot loss function as a result of n trees added to the ensemble
-#gbm.perf(gbm.fit, method = "cv")
+gbm.perf(gbm.fit, method = "cv")
 
-# train GBM model
+# train GBM model (increase depth and decrease trees)
 gbm.fit2 <- gbm(
   formula = mpd.obs.z ~ .,
   distribution = "gaussian",
-  data = bgr_data2,
+  data = bgr_train,
   n.trees = 5000,
   interaction.depth = 3, #increase the depth of each tree
   shrinkage = 0.1,       #increase the learning rate to take larger steps down the gradient descent
@@ -242,17 +271,19 @@ gbm.fit2 <- gbm(
   n.cores = NULL,
   verbose = FALSE
   )
+print(gbm.fit2)
 
 #save the model for easy use
 saveRDS(gbm.fit2, "gbm.fit2.rds")
-gbm.fit2<-readRDS("gbm.fit2.rds")
+#load best fitting model
+#gbm.fit2<-readRDS("gbm.fit2.rds")
 
 # find index for n trees with minimum CV error
 min_MSE <- which.min(gbm.fit2$cv.error)
 
 # get MSE and compute RMSE (root mean square error)
 sqrt(gbm.fit2$cv.error[min_MSE])
-## [1] 0.0754 this is a great fit
+## [1]  0.1050312 this is a better fit
 
 # plot loss function as a result of n trees added to the ensemble
 gbm.perf(gbm.fit2, method = "cv")
@@ -265,29 +296,349 @@ summary(
   method = relative.influence, # variables with the largest average decrease in MSE are considered most important (also can use permutation.test.gbm)
   las = 2
   )
-
-#predicting using the best model
-
-# predict values for test data
-pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_data2)
-# results
-caret::RMSE(pred, bgr_data2$mpd.obs.z) #0.035  good model
 ```
+
+```{r partial_dependence_plots, echo = TRUE}
+#How does the response variable change based on the variables?
+library(pdp)
+
+#Look at Leaf Shape
+##average marginal effect on mpd.obs.z
+gbm.fit2 %>%
+  pdp::partial(pred.var = "log_leafshape", n.trees = gbm.fit2$n.trees, grid.resolution = 100) %>%
+  autoplot(rug = TRUE, train = bgr_train) +
+  ylab("Standard Effect Size of MPD")
+
+#ICE (individual conditional expectation) plot
+##change in predicted response variable for each observation as each predictor variable is varied
+gbm.fit2 %>%
+  partial(
+    pred.var = "log_leafshape", 
+    n.trees = gbm.fit2$n.trees, 
+    grid.resolution = 100,
+    ice = TRUE
+    ) %>%
+  autoplot(rug = TRUE, train = bgr_train, alpha = .1) +
+  ggtitle("Non-centered")
+
+#Look at Species Richness
+##average marginal effect on mpd.obs.z
+gbm.fit2 %>%
+  pdp::partial(pred.var = "log_ntaxa", n.trees = gbm.fit2$n.trees, grid.resolution = 100) %>%
+  autoplot(rug = TRUE, train = bgr_train) +
+  ylab("MPD.Z")
+
+#ICE plot
+##change in predicted response variable for each observation as each predictor variable is varied
+gbm.fit2 %>%
+  partial(
+    pred.var = "log_ntaxa", 
+    n.trees = gbm.fit2$n.trees, 
+    grid.resolution = 100,
+    ice = TRUE
+    ) %>%
+  autoplot(rug = TRUE, train = bgr_train, alpha = .1) 
+
+#Look at latitude
+##average marginal effect on mpd.obs.z
+gbm.fit2 %>%
+  pdp::partial(pred.var = "lat", n.trees = gbm.fit2$n.trees, grid.resolution = 100) %>%
+  autoplot(rug = TRUE, train = bgr_train) +
+  ylab("MPD.Z")
+
+#ICE plot
+gbm.fit2 %>%
+  partial(
+    pred.var = "lat", 
+    n.trees = gbm.fit2$n.trees, 
+    grid.resolution = 100,
+    ice = TRUE
+    ) %>%
+  autoplot(rug = TRUE, train = bgr_train, alpha = .1) 
+
+#Look at Tree height
+##average marginal effect on mpd.obs.z
+gbm.fit2 %>%
+  pdp::partial(pred.var = "log_treeheight", n.trees = gbm.fit2$n.trees, grid.resolution = 100) %>%
+  autoplot(rug = TRUE, train = bgr_train) +
+  ylab("MPD.Z")
+
+#ICE plot
+gbm.fit2 %>%
+  partial(
+    pred.var = "log_treeheight", 
+    n.trees = gbm.fit2$n.trees, 
+    grid.resolution = 100,
+    ice = TRUE
+    ) %>%
+  autoplot(rug = TRUE, train = bgr_train, alpha = .1)
+
+#Look at Longitude
+##average marginal effect on mpd.obs.z
+gbm.fit2 %>%
+  pdp::partial(pred.var = "long", n.trees = gbm.fit2$n.trees, grid.resolution = 100) %>%
+  autoplot(rug = TRUE, train = bgr_train) +
+  ylab("MPD.Z")
+
+#ICE plot
+gbm.fit2 %>%
+  partial(
+    pred.var = "long", 
+    n.trees = gbm.fit2$n.trees, 
+    grid.resolution = 100,
+    ice = TRUE
+    ) %>%
+  autoplot(rug = TRUE, train = bgr_train, alpha = .1) 
+
+#Look at NPP
+##average marginal effect on mpd.obs.z
+gbm.fit2 %>%
+  pdp::partial(pred.var = "NPP", n.trees = gbm.fit2$n.trees, grid.resolution = 100) %>%
+  autoplot(rug = TRUE, train = bgr_train) +
+  ylab("MPD.Z")
+
+#ICE plot
+gbm.fit2 %>%
+  partial(
+    pred.var = "NPP", 
+    n.trees = gbm.fit2$n.trees, 
+    grid.resolution = 100,
+    ice = TRUE
+    ) %>%
+  autoplot(rug = TRUE, train = bgr_train, alpha = .1) 
+```
+
 
 #How well do the boosted regession model predictions match the data?
 ```{r plot_bgr_predictions, echo = TRUE}
-#add predictions to data frame
-bgr_data2$prediction<-pred
+#predicting using the best model
 
-ggplot(bgr_data2)+
-  geom_line(aes(y = mpd.obs.z, x = log_leafshape))+
-  geom_line(aes(y =prediction, x = log_leafshape), color = "red")
+# predict values for test data
+pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_test)
 
-
-plot(prediction ~ log_leafshape, bgr_data2, pch = 19, col = "red")
-abline(h=0)
-
-plot(prediction ~ log_treeheight, bgr_data2, pch = 19, col = "red")
-abline(h=0)
-
+# results
+caret::RMSE(pred, bgr_test$mpd.obs.z) #[1] 0.08386642 close to RMSE using the best training model
 ```
+
+#Figure 2
+```{r fig2, echo = TRUE}
+#pull dependecy data
+gbm.fit2 %>%
+  pdp::partial(pred.var = "log_leafshape", n.trees = gbm.fit2$n.trees, grid.resolution = 100)->ls
+gbm.fit2 %>%
+  pdp::partial(pred.var = "log_treeheight", n.trees = gbm.fit2$n.trees, grid.resolution = 100)->th
+gbm.fit2 %>%
+  pdp::partial(pred.var = "lat", n.trees = gbm.fit2$n.trees, grid.resolution = 100)->la
+gbm.fit2 %>%
+  pdp::partial(pred.var = "long", n.trees = gbm.fit2$n.trees, grid.resolution = 100)->lo
+gbm.fit2 %>%
+  pdp::partial(pred.var = "log_ntaxa", n.trees = gbm.fit2$n.trees, grid.resolution = 100)->sr
+gbm.fit2 %>%
+  pdp::partial(pred.var = "NPP", n.trees = gbm.fit2$n.trees, grid.resolution = 100)->np
+
+#save datasets for making Figure 2
+saveRDS(ls, "leafshape_brt.rds")
+saveRDS(th, "treeheight_brt.rds")
+saveRDS(la, "lat_brt.rds")
+saveRDS(lo, "long_brt.rds")
+saveRDS(sr, "speciesrichness_brt.rds")
+saveRDS(np, "npp_brt.rds")
+
+#leafshape
+leaf_pdp<-ggplot()+
+  geom_line(ls, mapping = aes(x= log_leafshape, y = yhat), size = 1)+
+  geom_hline(yintercept = 0, linetype="dashed")+
+  theme_classic()+
+  labs(y= "Standard Effect Size of MPD", x = "log (Leaf Shape)")+
+  scale_y_continuous(breaks= c(0, -1, -2, -3)) +
+  theme(text = element_text(size=12),
+        axis.title = element_text(size =12),
+        axis.text.y = element_text(color="black", size = 10),
+        axis.text.x = element_text(color="black", size = 10))
+
+#treeheight
+height_pdp<-ggplot()+
+  geom_line(th, mapping = aes(x= log_treeheight, y = yhat), size = 1)+
+  geom_hline(yintercept = 0, linetype="dashed")+
+  theme_classic()+
+  labs(y = " ", x = "log (Tree Height)")+
+  scale_y_continuous(breaks= c(0, -1, -2, -3)) +
+  theme(text = element_text(size=12),
+        axis.title = element_text(size =12),
+        axis.text.y = element_text(color="black", size = 10),
+        axis.text.x = element_text(color="black", size = 10))
+
+#latitude
+lat_pdp<-ggplot()+
+  geom_line(la, mapping = aes(x= lat, y = yhat), size = 1)+
+  geom_hline(yintercept = 0, linetype="dashed")+
+  theme_classic()+
+  labs(y = " ", x = "Latitude")+
+  scale_y_continuous(breaks= c(0, -1, -2, -3)) +
+  theme(text = element_text(size=12),
+        axis.title = element_text(size =12),
+        axis.text.y = element_text(color="black", size = 10),
+        axis.text.x = element_text(color="black", size = 10))
+
+#longitude
+long_pdp<-ggplot()+
+  geom_line(lo, mapping = aes(x= long, y = yhat), size = 1)+
+  geom_hline(yintercept = 0, linetype="dashed")+
+  theme_classic()+
+  labs(y = " ", x = "Longitude")+
+  scale_y_continuous(breaks= c(0, -1, -2, -3)) +
+  theme(text = element_text(size=12),
+        axis.title = element_text(size =12),
+        axis.text.y = element_text(color="black", size = 10),
+        axis.text.x = element_text(color="black", size = 10))
+
+#npp
+npp_pdp<-ggplot()+
+  geom_line(np, mapping = aes(x= NPP, y = yhat), size = 1)+
+  geom_hline(yintercept = 0, linetype="dashed")+
+  theme_classic()+
+  labs(y = " ", x = "Net Primary Productivity")+
+  scale_y_continuous(breaks= c(0, -1, -2, -3)) +
+  theme(text = element_text(size=12),
+        axis.title = element_text(size =12),
+        axis.text.y = element_text(color="black", size = 10),
+        axis.text.x = element_text(color="black", size = 10))
+
+#species richness
+sr_pdp<-ggplot()+
+  geom_line(sr, mapping = aes(x= log_ntaxa, y = yhat), size = 1)+
+  geom_hline(yintercept = 0, linetype="dashed")+
+  theme_classic()+
+  labs(y = " ",  x = "log(Species Richness)")+
+  scale_y_continuous(breaks= c(0, -1, -2, -3)) +
+  theme(text = element_text(size=12),
+        axis.title = element_text(size =12),
+        axis.text.y = element_text(color="black", size = 10),
+        axis.text.x = element_text(color="black", size = 10))
+
+#title
+title <- ggplot(data.frame(l = leaf_pdp$labels$y, x = 1, y = 1)) +
+      geom_text(aes(x, y, label = l), angle = 90) + 
+      theme_void() +
+      coord_cartesian(clip = "off")
+
+leaf_pdp$labels$y <- " "
+
+library(patchwork)
+comb<- (leaf_pdp + height_pdp + sr_pdp) / (lat_pdp + long_pdp + npp_pdp )
+l_combo<-comb + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A')
+title + l_combo + plot_layout(widths = c(1, 25))
+```
+
+```{r}
+#Rescale functions
+mm_rescale <- function(data, comparison){
+  (data - min(data))/diff(range(data))*diff(range(comparison)) + min(comparison)
+}
+
+mm_rescale_getpoint <- function(data, comparison, point){
+  my_perc <- (point - min(comparison))/diff(range(comparison))
+  diff(range(data))*my_perc + min(data)
+}
+
+widen <- function(data, span){
+  mean(range(data)) + c(-0.5, 0.5) *diff(range(data))*span
+}
+
+myplot <- function(mydf, xaxis, xlab = "", 
+                   ylab = "Standard Effect Size of MPD", ylab2 = "Density",
+                   myrange, xbreaks = NULL,
+                   mybreaks = -3:0, secbreaks = NULL){
+    ggplot()+
+    geom_histogram(data = bgr_data2, 
+                   mapping=aes(x=get(xaxis), y = ..density..), fill = "grey80")+
+    geom_line(mydf, mapping = aes(x= get(xaxis), 
+                                  y = mm_rescale(yhat, myrange)), size = 1)+
+    geom_hline(yintercept = mm_rescale_getpoint(myrange, 
+                                                mydf$yhat, 0),
+               linetype="dashed")+
+    theme_classic()+
+    scale_x_continuous(name = xlab,
+                       breaks = if(!is.null(xbreaks)){xbreaks} else{waiver()}) +
+    scale_y_continuous(name =  ylab,
+                       breaks = mm_rescale_getpoint(myrange, 
+                                                    mydf$yhat, mybreaks),
+                       labels = mybreaks,
+                       sec.axis = sec_axis(trans =~.,
+                                           name = ylab2,
+                                           breaks = if(!is.null(secbreaks)){secbreaks} else{waiver()},
+                                           labels = if(!is.null(secbreaks)){secbreaks} else{waiver()}
+                                           )) +
+    coord_cartesian(ylim = widen(mm_rescale_getpoint(myrange, mydf$yhat, mybreaks), 1.3)) +
+    theme(text = element_text(size=12),
+          axis.title = element_text(size =12),
+          axis.text.y = element_text(color="black", size = 10),
+          axis.text.x = element_text(color="black", size = 10))
+
+}
+
+
+myplot2 <- function(mydf, xaxis, xlab = "", 
+                   ylab = "Standard Effect Size of MPD", ylab2 = "Density",
+                   myrange, xbreaks = NULL,
+                   mybreaks = -3:0, secbreaks = NULL){
+    ggplot()+
+    geom_histogram(data = bgr_data2, 
+                   mapping=aes(x=get(xaxis), y = ..density..), fill = "grey80", binwidth = 1)+
+    geom_line(mydf, mapping = aes(x= get(xaxis), 
+                                  y = mm_rescale(yhat, myrange)), size = 1)+
+    geom_hline(yintercept = mm_rescale_getpoint(myrange, 
+                                                mydf$yhat, 0),
+               linetype="dashed")+
+    theme_classic()+
+    scale_x_continuous(name = xlab,
+                       breaks = if(!is.null(xbreaks)){xbreaks} else{waiver()}) +
+    scale_y_continuous(name =  ylab,
+                       breaks = mm_rescale_getpoint(myrange, 
+                                                    mydf$yhat, mybreaks),
+                       labels = mybreaks,
+                       sec.axis = sec_axis(trans =~.,
+                                           name = ylab2,
+                                           breaks = if(!is.null(secbreaks)){secbreaks} else{waiver()},
+                                           labels = if(!is.null(secbreaks)){secbreaks} else{waiver()}
+                                           )) +
+    coord_cartesian(ylim = widen(mm_rescale_getpoint(myrange, mydf$yhat, mybreaks), 1.3)) +
+    theme(text = element_text(size=12),
+          axis.title = element_text(size =12),
+          axis.text.y = element_text(color="black", size = 10),
+          axis.text.x = element_text(color="black", size = 10))
+}
+
+
+leaf_pdp <- myplot(ls, "log_leafshape", "log(Leaf Shape)", ylab = "", ylab2 = "", seq(0, 2, 0.2))
+height_pdp <- myplot(th, "log_treeheight", "log(Tree Height)", ylab = "", ylab2 = "", seq(.6, 1.1, 0.2))
+lat_pdp <- myplot2(la, "lat", "Latitude", ylab = "", ylab2 = "", seq(.02, .1, .01))
+long_pdp <- myplot2(lo, "long", "Longitude", ylab = "", ylab2 = "", seq(0.03 , .05, 0.001))
+sr_pdp <- myplot(sr, "log_ntaxa", "log(Species Richness)", ylab = "", ylab2 = "", 
+                 xbreaks = seq(0, 6, 2), seq(0, 0.5, .001))
+npp_pdp <- myplot(np, "NPP", "Net Primary Productivity", ylab = "", ylab2 = "", seq(.0063, .0077, .00001))
+
+#title left
+title <- ggplot(data.frame(l = "Standard Effect Size of MPD", x = .5, y = 1)) +
+  geom_text(aes(x, y, label = l), angle = 90) + 
+  theme_void() +
+  coord_cartesian(clip = "off")
+
+leaf_pdp$labels$y <- " "
+
+#title right
+title_right <- ggplot(data.frame(l = "Density", x = .5, y = 1)) +
+  geom_text(aes(x, y, label = l), angle = 270) + 
+  theme_void() +
+  coord_cartesian(clip = "off")
+
+leaf_pdp$labels$y2 <- " "
+
+comb<- (leaf_pdp + height_pdp + sr_pdp) / (lat_pdp + long_pdp + npp_pdp )
+l_combo<-comb + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A')
+
+l_combo #add labels in keynote
+
+ggsave("figure2.png", width = 12, height = 8)
+```
+
