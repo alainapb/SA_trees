@@ -104,9 +104,9 @@ cor.test(log(corr_data$height),log(corr_data$ratio)) # yes -.15
 summary(lm(log(height) ~ log(ratio), corr_data))
 
 ggplot(corr_data, mapping=aes(x= log(ratio), y = log(height)))+
-  geom_point()+
+  geom_point(pch = 1)+
   geom_smooth(method = "lm")+
-  theme_classic()
+  theme_bw()
 
 #Is there a phylogenetic correlation? (pgls() from the caper package)
 ## make a data frame
@@ -120,6 +120,7 @@ cdat<-comparative.data(data = dat, phy = corr_tree, names.col="taxa")
 #Is there a phylogenetic correlation between tree height and leaf shape? 
 summary(pgls(log_height ~ log_leaf_shape, cdat, lambda = "ML")) #NO multiple R2 = 0.00082
 summary(tree_height_gls<-gls(log(height) ~ log(ratio), corr_data, correlation = corPagel(0.5, corr_tree))) # r = -0.108, p = 0.348
+plot(tree_height_gls)
 
 #Is there a correlation between tree height and leaf area?
 cor.test(log(corr_data$height), log(corr_data$leaf_area)) #Yes 0.268
@@ -152,6 +153,16 @@ summary(lm(log(treeheight) ~ log(ntaxa), data = trait_npp_data))
 cor.test(log(trait_npp_data$treeheight), log(trait_npp_data$ntaxa)) #r = 0.821
 plot(log(treeheight) ~ log(ntaxa), data = trait_npp_data) #taller trees in areas with more species 
 
+
+#Is there a correlation between leaf shape and tree height? #YES
+summary(lm(log(treeheight) ~ log(leafshape), data = trait_npp_data)) 
+cor.test(log(trait_npp_data$treeheight), log(trait_npp_data$leafshape)) #r= -0.764
+plot(log(trait_npp_data$treeheight) ~ log(trait_npp_data$leafshape))
+
+ggplot(trait_npp_data, mapping=aes(x= log(leafshape), y = log(treeheight)))+
+  geom_point(pch = 1)+
+  geom_smooth(method = "lm")+
+  theme_bw()
 ```
 
 
