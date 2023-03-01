@@ -44,20 +44,14 @@ names(ratio)<-tree_data_ordered$matrix_name
 leafarea<-tree_data_ordered$leaf_area
 names(leafarea)<-tree_data_ordered$matrix_name
 
-##check for phylogenetic signal using fitContinous in the package 'geiger'
-fitContinuous(tree, height, model = "lambda")     #0
-fitContinuous(tree, ratio, model = "lambda")       #0
-fitContinuous(tree, leafarea, model = "lambda") #0
+##check for phylogenetic signal
 
-#try geigerv2 
-
-
-#Second method uses phylosig in the package phytools
+#phylosig in the package phytools
 phylosig(tree, height, method = "lambda")   #0.848
 phylosig(tree, ratio, method = "lambda")    #0.818
 phylosig(tree, leafarea, method = "lambda") #0.684
 
-#Third method uses gls() from the 'nlme' package comparing a null model to a model that includes the only the tree
+#gls() from the 'nlme' package comparing a null model to a model that includes the only the tree
 ##remove NAs and exotics
 tree_data_ordered %>%
   filter(height != "Exotic") %>%
@@ -103,10 +97,23 @@ Are there correlations between these traits? Are there phylogenetic correlations
 cor.test(log(corr_data$height),log(corr_data$ratio)) # yes -.15
 summary(lm(log(height) ~ log(ratio), corr_data))
 
-ggplot(corr_data, mapping=aes(x= log(ratio), y = log(height)))+
-  geom_point(pch = 1)+
-  geom_smooth(method = "lm")+
-  theme_bw()
+fig2a<-ggplot(corr_data, mapping=aes(x= log(ratio), y = log(height)))+
+  geom_point(pch = 1, size = 2, alpha = 0.5)+
+  geom_smooth(method = "lm", color = "black", fill = "#ffcc33", alpha = 0.5)+
+  labs(y = "log (Tree Height)", x = " ")+
+  theme_classic()+
+  theme(text = element_text(size=12),
+        axis.title = element_text(face = "bold", size =12),
+        strip.background =element_rect(fill="transparent", color="black", linewidth = 1),
+        strip.text = element_text(face = "bold",size=12, color="black"),
+        axis.text.y = element_text(color="black", size = 10),
+        axis.text.x = element_text(color="black", size = 10),
+        panel.background = element_rect(fill="transparent", color =NA),
+        #panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.background = element_blank(),
+        panel.border = element_rect(fill="transparent", color="black", linewidth = 1))+
+  stat_cor(method = "pearson", label.x = 2.5, label.y =4)
 
 #Is there a phylogenetic correlation? (pgls() from the caper package)
 ## make a data frame
@@ -118,9 +125,31 @@ dat<-data.frame(taxa=corr_tree$tip.label,
 cdat<-comparative.data(data = dat, phy = corr_tree, names.col="taxa")
 
 #Is there a phylogenetic correlation between tree height and leaf shape? 
-summary(pgls(log_height ~ log_leaf_shape, cdat, lambda = "ML")) #NO multiple R2 = 0.00082
+summary(height_pgls<-pgls(log_height ~ log_leaf_shape, cdat, lambda = "ML")) #NO multiple R2 = 0.00082
 summary(tree_height_gls<-gls(log(height) ~ log(ratio), corr_data, correlation = corPagel(0.5, corr_tree))) # r = -0.108, p = 0.348
 plot(tree_height_gls)
+abline(a = coef(tree_height_gls)[1], b = coef(tree_height_gls)[2])
+
+fig2b<-corr_data %>%
+  ggplot()+
+  geom_point(mapping=aes(x=log(ratio), y=log(height)), pch = 1, size = 2, alpha = 0.5)+
+  geom_abline(intercept = coef(tree_height_gls)[1], slope = coef(tree_height_gls)[2],color = "black")+
+  labs(y = "log (Tree Height)", x = " ")+
+  annotate(geom= 'text', x=3.2, y=4, label=expression(paste(italic("R = "),"-0.11, ",italic("p = "),"3.5e-01")), parse = TRUE)+
+  theme_classic()+
+  theme(text = element_text(size=12),
+        axis.title = element_text(face = "bold", size =12),
+        strip.background =element_rect(fill="transparent", color="black", linewidth = 1),
+        strip.text = element_text(face = "bold",size=12, color="black"),
+        axis.text.y = element_text(color="black", size = 10),
+        axis.text.x = element_text(color="black", size = 10),
+        panel.background = element_rect(fill="transparent", color =NA),
+        #panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.background = element_blank(),
+        panel.border = element_rect(fill="transparent", color="black", linewidth = 1))
+ 
+  
 
 #Is there a correlation between tree height and leaf area?
 cor.test(log(corr_data$height), log(corr_data$leaf_area)) #Yes 0.268
@@ -159,10 +188,31 @@ summary(lm(log(treeheight) ~ log(leafshape), data = trait_npp_data))
 cor.test(log(trait_npp_data$treeheight), log(trait_npp_data$leafshape)) #r= -0.764
 plot(log(trait_npp_data$treeheight) ~ log(trait_npp_data$leafshape))
 
-ggplot(trait_npp_data, mapping=aes(x= log(leafshape), y = log(treeheight)))+
-  geom_point(pch = 1)+
-  geom_smooth(method = "lm")+
-  theme_bw()
+fig2c<-ggplot(trait_npp_data, mapping=aes(x= log(leafshape), y = log(treeheight)))+
+  geom_point(pch = 1, size = 2, alpha = 0.5)+
+  geom_smooth(method = "lm",  color = "black", fill = "#ffcc33", alpha = 0.5)+
+  labs(y = "log (Tree Height)", x = "log (Leaf Shape)")+
+  theme_classic()+
+  theme(text = element_text(size=12),
+        axis.title = element_text(face = "bold", size =12),
+        strip.background =element_rect(fill="transparent", color="black", linewidth = 1),
+        strip.text = element_text(face = "bold",size=12, color="black"),
+        axis.text.y = element_text(color="black", size = 10),
+        axis.text.x = element_text(color="black", size = 10),
+        panel.background = element_rect(fill="transparent", color =NA),
+        #panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.background = element_blank(),
+        panel.border = element_rect(fill="transparent", color="black", linewidth = 1))+
+  stat_cor(method = "pearson", label.x = 1.5, label.y =3)
+```
+```{r figure2, echo = FALSE}
+library(patchwork)
+
+fig2a / fig2b / fig2c + plot_annotation(tag_levels = 'A') &
+    theme(plot.tag = element_text(face = 'bold'))
+
+ggsave("figure2.png", width = 8, height = 12)
 ```
 
 
