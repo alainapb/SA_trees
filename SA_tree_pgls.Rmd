@@ -369,9 +369,9 @@ trait_npp_clean<-subset(trait_npp_grid, npp != "NA")
 #                        crs = "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 
 #st_join(trait_npp_grid, my.sf.point)->test1
-#saveRDS(test1, "trait_npp_data.rds")
+#saveRDS(test1, "output/trait_npp_data.rds")
 ##read in ses.mpd results
-trait_npp_data<-readRDS("trait_npp_data.rds") 
+trait_npp_data<-readRDS("output/trait_npp_data.rds") 
 
 ggplot(trait_npp_data) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
@@ -390,9 +390,9 @@ ggplot(trait_npp_data) +
 #m1<-extract(modis1, SA_grids) #extract data from raster
 #str(m1) #check structure, 1207 grids with 14400 data points each... 
 
-#saveRDS(m1, "AET_data.rds")
+#saveRDS(m1, "output/AET_data.rds")
 ##read in ses.mpd results
-AET<-readRDS("AET_data.rds") 
+AET<-readRDS("output/AET_data.rds") 
 
 
 
@@ -513,8 +513,8 @@ need to plan a spatial model:
 #  )
 
 #save the model for easy use
-#saveRDS(gbm.fit2, "gbm.fit2.rds")
-gbm.fit2<-readRDS("gbm.fit2.rds")
+#saveRDS(output/gbm.fit2, "gbm.fit2.rds")
+gbm.fit2<-readRDS("output/gbm.fit2.rds")
 
 # find index for n trees with minimum CV error
 min_MSE <- which.min(gbm.fit2$cv.error)
@@ -598,10 +598,10 @@ for(i in 1:nrow(hyper_grid)) {
 #  hyper_grid$optimal_trees[i] <- which.min(gbm.tune$valid.error)
 #  hyper_grid$min_RMSE[i] <- sqrt(min(gbm.tune$valid.error))
 #  
-#  saveRDS(hyper_grid, "hyper_grid.rds")
+#  saveRDS(hyper_grid, "output/hyper_grid.rds")
 #}
 
-hyper_grid<-readRDS("hyper_grid.rds")
+hyper_grid<-readRDS("output/hyper_grid.rds")
 
 #show top models 
 hyper_grid %>% 

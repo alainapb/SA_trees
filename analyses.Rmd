@@ -26,11 +26,11 @@ library(ggpubr)
 
 ```{r load_data}
 #all trait data per grid cell
-trait_npp_data<-readRDS("trait_npp_data.rds") 
+trait_npp_data<-readRDS("output/trait_npp_data.rds") 
 #phylogeny
-tree<-readRDS("SA_tree.rds")
+tree<-readRDS("output/SA_tree.rds")
 #trait data per tree tip
-tree_data<-readRDS("tree_data.rds")
+tree_data<-readRDS("output/tree_data.rds")
 #put tree data in tree tip.label order
 tree_data_ordered<-tree_data[match(tree$tip.label, tree_data$matrix_name),]
 ```
@@ -101,6 +101,9 @@ summary(lm(log(height) ~ log(ratio), corr_data))
 fig2a<-ggplot(corr_data, mapping=aes(x= log(ratio), y = log(height)))+
   geom_point(pch = 1, size = 2, alpha = 0.5, color = "#ffcc33", )+
   geom_smooth(method = "lm", color = "black", alpha = 0.5, linewidth = .5)+
+  annotate(geom= 'text', x=3.2, y=1.1, label=expression(paste(italic("R = "),"-0.15, ",italic("p < "),"0.01")), parse = TRUE)+
+  annotate('segment', x= -1.35, xend = 3.7, y = coef(height_pgls)[1] + coef(height_pgls)[2], yend = coef(height_pgls)[1] + coef(height_pgls)[2]*3.8, linewidth = 0.5)+
+  annotate(geom= 'text', x=3.2, y=2.25, label=expression(paste(italic("R = "),"-0.03, ",italic("p = "),"0.35")), parse = TRUE)+
   labs(y = "log (Tree Height)", x = " ")+
   theme_classic()+
   theme(text = element_text(size=12),
@@ -113,8 +116,7 @@ fig2a<-ggplot(corr_data, mapping=aes(x= log(ratio), y = log(height)))+
         #panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         plot.background = element_blank(),
-        panel.border = element_rect(fill="transparent", color="black", linewidth = 1))+
-  stat_cor(method = "pearson", label.x = 2.5, label.y =4)
+        panel.border = element_rect(fill="transparent", color="black", linewidth = 1))
 
 #Is there a phylogenetic correlation? (pgls() from the caper package)
 ## make a data frame
@@ -131,26 +133,26 @@ summary(tree_height_gls<-gls(log(height) ~ log(ratio), corr_data, correlation = 
 plot(tree_height_gls)
 abline(a = coef(tree_height_gls)[1], b = coef(tree_height_gls)[2])
 
-fig2b<-corr_data %>%
-  ggplot()+
-  geom_point(mapping=aes(x=log(ratio), y=log(height)), pch = 1, size = 2, alpha = 0.5, color = "#ffcc33")+
-  #geom_abline(intercept = coef(height_pgls)[1], slope = coef(height_pgls)[2],color = "black")+
-  #geom_segment(aes(x= -1.5, xend = 3.8, y = coef(height_pgls)[1] + coef(height_pgls)[2], yend = coef(height_pgls)[1] + coef(height_pgls)[2]*3.8))+
-  annotate('segment', x= -1.5, xend = 3.8, y = coef(height_pgls)[1] + coef(height_pgls)[2], yend = coef(height_pgls)[1] + coef(height_pgls)[2]*3.8, linewidth = 0.5)+
-  labs(y = "log (Tree Height)", x = " ")+
-  annotate(geom= 'text', x=3.2, y=4, label=expression(paste(italic("R = "),"-0.03, ",italic("p = "),"3.5e-01")), parse = TRUE)+
-  theme_classic()+
-  theme(text = element_text(size=12),
-        axis.title = element_text(face = "bold", size =12),
-        strip.background =element_rect(fill="transparent", color="black", linewidth = 1),
-        strip.text = element_text(face = "bold",size=12, color="black"),
-        axis.text.y = element_text(color="black", size = 10),
-        axis.text.x = element_text(color="black", size = 10),
-        panel.background = element_rect(fill="transparent", color =NA),
-        #panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        plot.background = element_blank(),
-        panel.border = element_rect(fill="transparent", color="black", linewidth = 1))
+#fig2b<-corr_data %>%
+#  ggplot()+
+#  geom_point(mapping=aes(x=log(ratio), y=log(height)), pch = 1, size = 2, alpha = 0.5, color = "#ffcc33")+
+#  #geom_abline(intercept = coef(height_pgls)[1], slope = coef(height_pgls)[2],color = "black")+
+#  #geom_segment(aes(x= -1.5, xend = 3.8, y = coef(height_pgls)[1] + coef(height_pgls)[2], yend = #coef(height_pgls)[1] + coef(height_pgls)[2]*3.8))+
+#  annotate('segment', x= -1.5, xend = 3.8, y = coef(height_pgls)[1] + coef(height_pgls)[2], yend = #coef(height_pgls)[1] + coef(height_pgls)[2]*3.8, linewidth = 0.5)+
+#  labs(y = "log (Tree Height)", x = " ")+
+#  annotate(geom= 'text', x=3.2, y=4, label=expression(paste(italic("R = "),"-0.03, ",italic("p = #"),"3.5e-01")), parse = TRUE)+
+#  theme_classic()+
+#  theme(text = element_text(size=12),
+#        axis.title = element_text(face = "bold", size =12),
+#        strip.background =element_rect(fill="transparent", color="black", linewidth = 1),
+#        strip.text = element_text(face = "bold",size=12, color="black"),
+#        axis.text.y = element_text(color="black", size = 10),
+#        axis.text.x = element_text(color="black", size = 10),
+#        panel.background = element_rect(fill="transparent", color =NA),
+#        #panel.grid.major = element_blank(),
+#        panel.grid.minor = element_blank(),
+#        plot.background = element_blank(),
+#        panel.border = element_rect(fill="transparent", color="black", linewidth = 1))
  
   
 
@@ -196,6 +198,7 @@ fig2c<-ggplot(trait_npp_data, mapping=aes(x= log(leafshape), y = log(treeheight)
   geom_smooth(method = "lm",  color = "black", alpha = 0.5, linewidth = .5)+
   labs(y = "log (Tree Height)", x = "log (Leaf Shape)")+
   theme_classic()+
+  annotate(geom= 'text', x=1.6, y=2.7, label=expression(paste(italic("R = "),"-0.76, ",italic("p < "),"0.01")), parse = TRUE)+
   theme(text = element_text(size=12),
         axis.title = element_text(face = "bold", size =12),
         strip.background =element_rect(fill="transparent", color="black", linewidth = 1),
@@ -206,16 +209,16 @@ fig2c<-ggplot(trait_npp_data, mapping=aes(x= log(leafshape), y = log(treeheight)
         #panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         plot.background = element_blank(),
-        panel.border = element_rect(fill="transparent", color="black", linewidth = 1))+
-  stat_cor(method = "pearson", label.x = 1.5, label.y =3)
+        panel.border = element_rect(fill="transparent", color="black", linewidth = 1))
+  
 ```
 ```{r figure2, echo = FALSE}
 library(patchwork)
 
-fig2a / fig2b / fig2c + plot_annotation(tag_levels = 'A') &
+fig2a / fig2c + plot_annotation(tag_levels = 'A') &
     theme(plot.tag = element_text(face = 'bold'))
 
-ggsave("figure2.png", width = 8, height = 12)
+ggsave("figure2.png", width = 8, height = 8)
 ```
 
 
@@ -291,7 +294,7 @@ bgr_data$log_ntaxa<-log(bgr_data$ntaxa) #log the species richness
 bgr_data2<-bgr_data[,c(1,2,4,7,8,9,10)] # only include the traits for the model
 
 #save dataframe
-saveRDS(bgr_data2, "bgr_data2.rds")
+saveRDS(bgr_data2, "output/bgr_data2.rds")
 
 # for reproducibility
 set.seed(456)
@@ -338,9 +341,9 @@ gbm.fit2 <- gbm(
 print(gbm.fit2)
 
 #save the model for easy use
-saveRDS(gbm.fit2, "gbm.fit2.rds")
+saveRDS(gbm.fit2, "output/gbm.fit2.rds")
 #load best fitting model
-#gbm.fit2<-readRDS("gbm.fit2.rds")
+#gbm.fit2<-readRDS("output/gbm.fit2.rds")
 
 # find index for n trees with minimum CV error
 min_MSE <- which.min(gbm.fit2$cv.error)
@@ -484,8 +487,8 @@ pred <- predict(gbm.fit2, n.trees = gbm.fit2$n.trees, bgr_test)
 caret::RMSE(pred, bgr_test$mpd.obs.z) #[1] 0.08386642 close to RMSE using the best training model
 ```
 
-#Figure 2
-```{r fig2, echo = TRUE}
+#Figure 3
+```{r fig3, echo = TRUE}
 #pull dependecy data
 gbm.fit2 %>%
   pdp::partial(pred.var = "log_leafshape", n.trees = gbm.fit2$n.trees, grid.resolution = 100)->ls
@@ -501,12 +504,12 @@ gbm.fit2 %>%
   pdp::partial(pred.var = "NPP", n.trees = gbm.fit2$n.trees, grid.resolution = 100)->np
 
 #save datasets for making Figure 2
-saveRDS(ls, "leafshape_brt.rds")
-saveRDS(th, "treeheight_brt.rds")
-saveRDS(la, "lat_brt.rds")
-saveRDS(lo, "long_brt.rds")
-saveRDS(sr, "speciesrichness_brt.rds")
-saveRDS(np, "npp_brt.rds")
+saveRDS(ls, "output/leafshape_brt.rds")
+saveRDS(th, "output/treeheight_brt.rds")
+saveRDS(la, "output/lat_brt.rds")
+saveRDS(lo, "output/long_brt.rds")
+saveRDS(sr, "output/speciesrichness_brt.rds")
+saveRDS(np, "output/npp_brt.rds")
 
 #leafshape
 leaf_pdp<-ggplot()+
@@ -615,7 +618,7 @@ myplot <- function(mydf, xaxis, xlab = "",
                    mybreaks = -3:0, secbreaks = NULL){
     ggplot()+
     geom_histogram(data = bgr_data2, 
-                   mapping=aes(x=get(xaxis), y = ..density..), fill = "grey80")+
+                   mapping=aes(x=get(xaxis), y = ..density..), fill = "#ffcc33",alpha = 0.5)+
     geom_line(mydf, mapping = aes(x= get(xaxis), 
                                   y = mm_rescale(yhat, myrange)), size = 1)+
     geom_hline(yintercept = mm_rescale_getpoint(myrange, 
@@ -648,7 +651,7 @@ myplot2 <- function(mydf, xaxis, xlab = "",
                    mybreaks = -3:0, secbreaks = NULL){
     ggplot()+
     geom_histogram(data = bgr_data2, 
-                   mapping=aes(x=get(xaxis), y = ..density..), fill = "grey80", binwidth = 1)+
+                   mapping=aes(x=get(xaxis), y = ..density..), fill = "#ffcc33",alpha = 0.5, binwidth = 1)+
     geom_line(mydf, mapping = aes(x= get(xaxis), 
                                   y = mm_rescale(yhat, myrange)), size = 1)+
     geom_hline(yintercept = mm_rescale_getpoint(myrange, 
@@ -699,10 +702,25 @@ title_right <- ggplot(data.frame(l = "Density", x = .5, y = 1)) +
 leaf_pdp$labels$y2 <- " "
 
 comb<- (leaf_pdp + height_pdp + sr_pdp) / (lat_pdp + long_pdp + npp_pdp )
-l_combo<-comb + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A')
+l_combo<-comb + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') &
+    theme(plot.tag = element_text(face = 'bold'))
 
 l_combo #add labels in keynote
 
-ggsave("figure2.png", width = 12, height = 8)
+ggsave("figures/figure3.png", width = 12, height = 8)
+```
+```{r supplemental_figure, echo = FALSE}
+df = subset(bgr_data2, select = -c(mpd.obs.z) )
+plot(df)
+
+corr <- round(cor(df), 1) 
+ggcorrplot(corr,
+           hc.order = TRUE,
+           type = "lower",
+           outline.color = "white",
+           colors = c("#6D9EC1", "white", "#E46726"),
+           lab = TRUE) ->sup_fig1
+
+ggsave("figures/supp.png", width = 8, height = 8)
 ```
 

@@ -42,7 +42,7 @@ summary(tree_data)
 #remove any blanks from map_name
 filter(tree_data, map_name != "")->tree_data
 
-saveRDS(tree_data, "tree_data.rds")
+saveRDS(tree_data, "output/tree_data.rds")
 
 length(unique(tree_data$map_name)) #there is data for 1085 map_names from the tree 
 
@@ -50,7 +50,7 @@ length(unique(tree_data$map_name)) #there is data for 1085 map_names from the tr
 SA_tree<-drop.tip(tree, tree$tip.label[which(!(tree$tip.label %in% tree_data$matrix_name))])
 #plot(SA_tree, cex = 0.3, type = "f")
 
-saveRDS(SA_tree, "SA_tree.rds")
+saveRDS(SA_tree, "output/SA_tree.rds")
 ```
 
 ```{r calculate PD, include = FALSE}
@@ -155,9 +155,9 @@ comm_matrix<-comm_matrix[,1:1085]
 ##code takes time to run
 #ses_results <-ses.mpd(comm_matrix, distance_matrix, null.model = "taxa.labels", runs = 1000) #30 minutes
 ##save output as RDS
-#saveRDS(ses_results, "NRI_data.rds")
+#saveRDS(ses_results, "output/NRI_data.rds")
 ##read in ses.mpd results
-NRI<-readRDS("NRI_data.rds") 
+NRI<-readRDS("output/NRI_data.rds") 
 NRI$ID<-rownames(NRI)
 
 #median
@@ -364,9 +364,9 @@ library(terra)
 #                        crs = "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 
 #st_join(trait_npp_grid, my.sf.point)->test1
-#saveRDS(test1, "trait_npp_data.rds")
+#saveRDS(test1, "output/trait_npp_data.rds")
 ##read npp data
-trait_npp_data<-readRDS("trait_npp_data.rds") 
+trait_npp_data<-readRDS("output/trait_npp_data.rds") 
 
 npp_plot<-ggplot(trait_npp_data) +
   #geom_sf(data = SA_poly, fill = NA, size = 0.3) +
@@ -389,7 +389,7 @@ all<-SESplot + npp_plot + richness + shape_plot + height_plot +  plot_layout(nco
 
 all  + plot_annotation(tag_levels = 'A')
 
-ggsave("figure1.png", height = 6, width = 12)
+ggsave("figures/figure1.png", height = 6, width = 12)
 ```
 
 #Check the ecotone region in the cape, it may explain why there is low species richness and high mpd
