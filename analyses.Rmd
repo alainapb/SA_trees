@@ -193,12 +193,22 @@ summary(lm(log(treeheight) ~ log(leafshape), data = trait_npp_data))
 cor.test(log(trait_npp_data$treeheight), log(trait_npp_data$leafshape)) #r= -0.764
 plot(log(trait_npp_data$treeheight) ~ log(trait_npp_data$leafshape))
 
+cords<-data.frame(lat = 1:4828, long = NA)
+cords$lat<-trait_npp_data$lat
+cords$long<-trait_npp_data$long
+
+x<-log(trait_npp_data$treeheight)
+y<-log(trait_npp_data$leafshape)
+
+library(SpatialPack)
+modified.ttest(x, y, cords, nclass = 13)
+
 fig2c<-ggplot(trait_npp_data, mapping=aes(x= log(leafshape), y = log(treeheight)))+
   geom_point(pch = 1, size = 2, alpha = 0.2, color = "#ffcc33")+
   geom_smooth(method = "lm",  color = "black", alpha = 0.5, linewidth = .5)+
   labs(y = "log (Tree Height)", x = "log (Leaf Shape)")+
   theme_classic()+
-  annotate(geom= 'text', x=1.6, y=2.7, label=expression(paste(italic("R = "),"-0.76, ",italic("p < "),"0.01")), parse = TRUE)+
+  annotate(geom= 'text', x=1.6, y=2.7, label=expression(paste(italic("R = "),"-0.76, ",italic("p = "),"0.05")), parse = TRUE)+
   theme(text = element_text(size=12),
         axis.title = element_text(face = "bold", size =12),
         strip.background =element_rect(fill="transparent", color="black", linewidth = 1),
@@ -218,7 +228,7 @@ library(patchwork)
 fig2a / fig2c + plot_annotation(tag_levels = 'A') &
     theme(plot.tag = element_text(face = 'bold'))
 
-ggsave("figure2.png", width = 8, height = 8)
+ggsave("figures/figure2.png", width = 8, height = 8)
 ```
 
 
